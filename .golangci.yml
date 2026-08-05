@@ -1,0 +1,32 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - revive
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gocritic
+    - goconst
+    - misspell
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+  exclusions:
+    generated: lax
+    rules:
+      - path: (_test\.go)$
+        text: "exported"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

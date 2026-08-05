@@ -1,0 +1,16 @@
+# Normalize line endings across platforms.
+* text=auto
+
+# Go sources and generated code must stay LF so CI formatting checks are stable.
+*.go text eol=lf
+
+# YAML, markdown, and plain-text configs as LF too.
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Makefile needs LF to be readable by make.
+Makefile text eol=lf
+
+# Generated protobuf Go code is committed as-is.
+*.pb.go text eol=lf

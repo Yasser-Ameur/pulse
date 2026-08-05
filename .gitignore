@@ -1,0 +1,26 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.test
+
+# Local data (broker data dir)
+/data/
+*.log
+*.index
+
+# Editor / IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go toolchain
+/vendor/
+
+# Coverage
+coverage.out
+*.coverprofile
