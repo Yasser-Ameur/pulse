@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package pulse.v1;
+
+option go_package = "github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb";
+
+import "pulse/v1/model.proto";
+
+// BrokerState mirrors the broker lifecycle state machine. Phase 1 exercises
+// the full cycle; future phases (leader transfer, maintenance) extend it.
+enum BrokerState {
+  BROKER_STATE_UNSPECIFIED = 0;
+  BROKER_STATE_STARTING = 1;
+  BROKER_STATE_RECOVERING = 2;
+  BROKER_STATE_RUNNING = 3;
+  BROKER_STATE_DRAINING = 4;
+  BROKER_STATE_STOPPING = 5;
+  BROKER_STATE_STOPPED = 6;
+}
+
+message BrokerInfoRequest {}
+
+// BrokerInfoResponse describes the local broker and its cluster identity.
+message BrokerInfoResponse {
+  // cluster_id identifies the cluster this broker belongs to.
+  string cluster_id = 1;
+
+  // broker_id uniquely identifies this broker within the cluster.
+  string broker_id = 2;
+
+  // node_id uniquely identifies this physical node. It equals the broker_id
+  // in single-node deployments and diverges once multiple brokers share a node.
+  string node_id = 3;
+
+  // address is the advertised gRPC address clients should connect to.
+  string address = 4;
+
+  // state is the current broker lifecycle state.
+  BrokerState state = 5;
+
+  // version is the Pulse release version.
+  string version = 6;
+
+  // started_at_ms is the wall-clock time the broker transitioned to Running.
+  int64 started_at_ms = 7;
+
+  // topics is the number of topics currently registered.
+  int32 topics = 8;
+}
+
+message CreateTopicRequest {
+  string name = 1;
+  optional TopicConfig config = 2;
+  // partitions must be 1 in Phase 1.
+  int32 partitions = 3;
+}
+
+message CreateTopicResponse {
+  Topic topic = 1;
+}
+
+message DeleteTopicRequest {
+  string name = 1;
+}
+
+message DeleteTopicResponse {}
+
+message ListTopicsRequest {}
+
+message ListTopicsResponse {
+  repeated Topic topics = 1;
+}
+
+// Broker exposes cluster and topic administration. Health is served through
+// the standard grpc.health.v1 service so that standard probes interoperate.
+service Broker {
+  rpc CreateTopic(CreateTopicRequest) returns (CreateTopicResponse);
+  rpc DeleteTopic(DeleteTopicRequest) returns (DeleteTopicResponse);
+  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse);
+  rpc BrokerInfo(BrokerInfoRequest) returns (BrokerInfoResponse);
+}

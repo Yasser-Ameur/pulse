@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package pulse.v1;
+
+option go_package = "github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb";
+
+import "pulse/v1/model.proto";
+
+message PublishRequest {
+  string topic = 1;
+  // partition must be 0 in Phase 1 (single-partition topics).
+  int32 partition = 2;
+  // messages are appended as one batch and receive consecutive offsets.
+  repeated Message messages = 3;
+}
+
+message PublishResponse {
+  string topic = 1;
+  int32 partition = 2;
+  // offsets is aligned with the request messages; each entry is the assigned
+  // offset of the message at the same index.
+  repeated int64 offsets = 3;
+  // first_timestamp_ms is the broker-assigned timestamp of the batch.
+  int64 first_timestamp_ms = 4;
+}
+
+message SubscribeRequest {
+  // consumer optionally names this consumer. When set and start_offset is
+  // absent, the stream resumes from the consumer's last acknowledged offset.
+  string consumer = 1;
+
+  string topic = 2;
+
+  // partition must be 0 in Phase 1.
+  int32 partition = 3;
+
+  // start_offset optionally overrides any cursor. Absent means "resume from
+  // the consumer's cursor (or 0)". When set, the value must be non-negative
+  // and within the log bounds.
+  optional int64 start_offset = 4;
+
+  // follow controls the end-of-log behavior. true streams new records as they
+  // arrive; false replays to the current end of log and completes.
+  bool follow = 5;
+}
+
+// SubscribeResponse carries a batch of records. Records within one response
+// are contiguous in offset.
+message SubscribeResponse {
+  repeated Record records = 1;
+}
+
+message AckRequest {
+  // consumer identifies the acknowledging consumer. Required.
+  string consumer = 1;
+
+  string topic = 2;
+  int32 partition = 3;
+
+  // offset is the last offset successfully processed by the consumer. The
+  // broker advances the consumer's stored cursor to this offset.
+  int64 offset = 4;
+}
+
+message AckResponse {
+  // cursor is the stored cursor after the acknowledgment.
+  int64 cursor = 1;
+}
+
+// PubSub is the data plane: publish, subscribe, and acknowledge. Offset
+// commits (consumer-group style) are reserved for a later phase; Ack covers
+// single-consumer position tracking today.
+service PubSub {
+  rpc Publish(PublishRequest) returns (PublishResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+  rpc Ack(AckRequest) returns (AckResponse);
+}

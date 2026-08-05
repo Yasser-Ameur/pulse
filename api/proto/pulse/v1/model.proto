@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package pulse.v1;
+
+option go_package = "github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb";
+
+// Topic describes a named destination for event streams and its durable
+// configuration. Phase 1 topics always have exactly one partition; the
+// partition count field is present so that multi-partition topics can be
+// enabled in a later phase without a wire-format change.
+message Topic {
+  string name = 1;
+  int32 partitions = 2;
+  TopicConfig config = 3;
+  int64 created_at_ms = 4;
+}
+
+// TopicConfig carries the durable retention and size limits applied to a
+// topic. All limits are best-effort in Phase 1: they are persisted and served
+// back through the API, while enforcement lands with the retention sweeper.
+message TopicConfig {
+  // max_message_bytes bounds the payload size of a single published message.
+  int64 max_message_bytes = 1;
+
+  // retention_ms is the maximum age of a message in milliseconds before it may
+  // be deleted. Zero means no time-based retention.
+  int64 retention_ms = 2;
+
+  // retention_bytes is the maximum size of a topic's log before the oldest
+  // messages may be deleted. Zero means no size-based retention.
+  int64 retention_bytes = 3;
+
+  // cleanup_policy is "delete" (default) or "compact". Compaction is reserved
+  // for a future phase.
+  string cleanup_policy = 4;
+
+  // replication_factor is the number of replicas each partition should keep.
+  // Phase 1 brokers are single-node and always use one.
+  int32 replication_factor = 5;
+}
+
+// Message is the user-facing event model. All fields are advisory metadata
+// except the payload; the broker enforces only structural validation.
+message Message {
+  // event_id is a ULID. Empty means the broker assigns one at publish time.
+  string event_id = 1;
+
+  // key is an optional routing key used by future partitioning logic.
+  string key = 2;
+
+  // payload is the opaque event body.
+  bytes payload = 3;
+
+  // headers is an unordered set of user-defined string attributes.
+  map<string, string> headers = 4;
+
+  // content_type describes the payload encoding, e.g. "application/json".
+  string content_type = 5;
+
+  // correlation_id links events that belong to the same logical operation.
+  string correlation_id = 6;
+
+  // trace_id carries distributed-tracing context through the broker.
+  string trace_id = 7;
+
+  // retry_count records how many times this event has been redelivered.
+  int32 retry_count = 8;
+
+  // ttl_ms is the event time-to-live in milliseconds; zero means no TTL.
+  int64 ttl_ms = 9;
+
+  // priority orders messages within a partition. Lower is higher priority.
+  int32 priority = 10;
+
+  // schema_version identifies the payload schema; zero means unversioned.
+  int32 schema_version = 11;
+}
+
+// Record is a Message with its immutable log position and broker-assigned
+// timestamp. Records are what consumers receive.
+message Record {
+  string topic = 1;
+  int32 partition = 2;
+  int64 offset = 3;
+  int64 timestamp_ms = 4;
+  Message message = 5;
+}
