@@ -5,7 +5,7 @@ tested, and keeps the architecture frozen from Architecture.md. This roadmap
 maps each future capability to the extension point it plugs into — none of
 these require a redesign.
 
-## Phase 1 — Core broker (current)
+## Phase 1 — Core broker
 
 - Single-node broker with durable append-only log.
 - Topics: create / delete / list with persisted metadata.
@@ -13,16 +13,17 @@ these require a redesign.
 - gRPC API, CLI, in-process integration tests, CI, full documentation.
 - Status: **shipped** (tag `v0.1.0-phase1`).
 
-## Phase 2 — Storage engine
+## Phase 2 — Storage engine (in progress)
 
 What Storage.md already specifies but Phase 1 defers:
 
-- Retention sweeper (time/size) over sealed segments.
-- Compaction for compacted topics (last-writer-wins per key, address space
-  preserved).
-- Segment snapshots to make recovery constant-time.
-- Read-only memory mapping of sealed segments.
-- Stress tests: crash-at-any-point equivalence against a reference model.
+- **Shipped**: retention sweeper (time/size) over sealed segments.
+- **Shipped**: segment snapshots to make recovery constant-time.
+- **Shipped**: stress tests — crash-at-any-point equivalence against a
+  reference model (payloads and timestamps preserved, offsets contiguous).
+- **Shipped**: data-directory layout fix (topic/partition paths).
+- Remaining: compaction for compacted topics (last-writer-wins per key, address
+  space preserved) and read-only memory mapping of sealed segments.
 
 ## Phase 3 — Networking
 

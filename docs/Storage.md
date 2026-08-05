@@ -4,9 +4,9 @@ Pulse's data plane is an append-only, immutable, checksummed log divided into
 segment files — the same family of design as Kafka and Redpanda, sized and
 documented for a solo maintainer. This document is the storage contract:
 the format, the layout, and the recovery guarantees. Phase 1 implements
-append, sequential/random read, indexing, rotation, fsync, and crash recovery.
-Compaction, time retention, snapshots, and memory-mapping are specified here
-and implemented in later phases.
+append, sequential/random read, indexing, rotation, fsync, and crash recovery;
+Phase 2 adds the retention sweeper and recovery snapshots. Compaction and
+memory-mapping are specified here and implemented in later phases.
 
 ## 1. Guarantees
 
@@ -33,7 +33,8 @@ data/
             ├── 00000000000000000000.log      # data segment
             ├── 00000000000000000000.index    # offset index for the segment
             ├── 00000000000000000010.log      # next segment (rotation)
-            └── 00000000000000000010.index
+            ├── 00000000000000000010.index
+            └── snapshot                      # recovery checkpoint (see §8)
 ```
 
 - Segment files are named by their base offset, zero-padded to 20 digits, with
@@ -160,7 +161,11 @@ metadata store.
 ## 7. Recovery
 
 On startup, for every partition directory the engine performs **log
-recovery**:
+recovery**: the snapshot fast path (§8) when a valid checkpoint matches the
+on-disk state, otherwise the full scan below. The scan is the correctness
+baseline — correctness never depends on a snapshot being present.
+
+The full scan proceeds as follows:
 
 1. Enumerate `.log` files in offset order; load index files.
 2. For each sealed segment, validate its index is consistent with the data
@@ -179,27 +184,79 @@ A torn tail is therefore always truncated to the last fully-written, CRC-valid
 batch — never partially accepted. This is what makes guarantee #1 hold across
 crashes.
 
-## 8. Retention, compaction, snapshots (future phases)
+## 8. Retention, snapshots, compaction
 
-These are specified now so the engine structure already supports them:
+### Time/size retention (implemented)
 
-- **Time/size retention**: a sweeper traverses sealed segments from oldest to
-  newest, deleting segments entirely outside the retention window (age or total
-  bytes). The active segment and the segment containing any live consumer
-  cursor are protected.
-- **Compaction**: for compacted topics, a background pass rewrites segments
-  keeping only the last record per key, then atomically swaps the old segments
-  for new ones and truncates the corresponding index. The log address space is
-  preserved: offsets of surviving records do not change.
-- **Snapshots**: periodic durable checkpoints of LEO/HW and active-segment state
-  to make recovery constant-time rather than scan-from-epoch. The recovery
-  scan remains correct without them; snapshots are an optimization.
-- **Memory mapping**: read-only `mmap` of sealed segments to enable zero-copy
-  reads; the active segment stays buffered. Deferred because the sequential
-  read path is already allocation-friendly.
+A background sweeper (period `storage.retention-interval`, default 30s, disabled
+when zero) applies each topic's `retention` policy to its partition logs. Trim
+runs under the log's writer lock and deletes whole **sealed** segments from
+oldest to newest; the active segment is never deleted because it receives new
+data.
 
-Phase 1 correctness never depends on these optimizations, so they can be added
-incrementally without touching the format.
+- **Time**: a sealed segment is deleted when its newest record is older than
+  `retention.max-age` at sweep time.
+- **Size**: sealed segments are deleted until the total log size (including the
+  active segment) is within `retention.max-bytes`.
+- Both limits are independent and can be combined; a zero limit disables that
+  axis.
+
+Trimming preserves the address space: surviving offsets never change, and a
+consumer reading from below the trimmed prefix simply begins at the oldest
+surviving record. The durable snapshot (below) is rewritten after a trim, so a
+restart trusts the trimmed state. Deletion is not cursor-aware today: a slow
+consumer behind the trimmed prefix misses those records. Protecting the segment
+containing any live consumer cursor is planned.
+
+### Snapshots (implemented)
+
+Every partition has one `snapshot` file — a tiny, atomically-written checkpoint
+that makes recovery constant-time instead of scan-from-epoch:
+
+```
+offset  size  field
+0       1     magic = 0x53 ('S')
+1       1     version = 0x01
+2       2     reserved
+4       4     crc32c (Castagnoli, over bytes 8..40)
+8       8     leo        (int64, log end offset)
+16      8     activeBase (int64, base offset of the active segment)
+24      8     activeSize (int64, valid byte length of the active segment)
+32      8     activeNext (int64, active segment next offset; equals leo)
+```
+
+The file is written to a temp file, fsynced, and renamed into place, so a crash
+leaves either the old or the new checkpoint, never a torn mix. It is rewritten
+after each rotation, after a trim, and on clean shutdown.
+
+At startup recovery prefers the snapshot:
+
+1. If it is missing, corrupt, or describes a different active segment than is on
+   disk, it is discarded and the full scan in §7 runs.
+2. Sealed segments are restored from their persisted index files after a cheap
+   spot-check of the first batch's base offset against the segment name; a
+   missing or corrupt index falls back to scanning that segment.
+3. If the active segment matches `activeSize` exactly, it is trusted. If it grew
+   past the checkpoint, only the delta tail is scanned and truncated at the last
+   valid batch.
+
+Because the checkpoint always records a batch boundary, the trusted prefix is
+never cut mid-batch, and a torn tail after a valid checkpoint is handled without
+a full scan. Sealed-segment corruption is only detected when the data is read,
+not at startup.
+
+### Compaction (future)
+
+For compacted topics, a background pass rewrites segments keeping only the last
+record per key, then atomically swaps the old segments for new ones and truncates
+the corresponding index. The log address space is preserved: offsets of surviving
+records do not change.
+
+### Memory mapping (future)
+
+Read-only `mmap` of sealed segments to enable zero-copy reads; the active segment
+stays buffered. Deferred because the sequential read path is already
+allocation-friendly.
 
 ## 9. Why this format (decisions and rationale)
 

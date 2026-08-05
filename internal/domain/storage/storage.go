@@ -8,9 +8,11 @@ package storage
 
 import (
 	"context"
+	"time"
 
 	"github.com/pulse-stream/pulse/internal/domain/message"
 	"github.com/pulse-stream/pulse/internal/domain/offset"
+	"github.com/pulse-stream/pulse/internal/domain/retention"
 )
 
 // Log is an append-only, durable, ordered sequence of record batches.
@@ -41,6 +43,12 @@ type Log interface {
 
 	// Sync flushes all buffered data to stable storage.
 	Sync() error
+
+	// Trim applies the retention policy at the given wall-clock time, deleting
+	// sealed segments that fall entirely outside the retention window (age or
+	// total bytes). The active segment is never deleted. Offsets of surviving
+	// records are unchanged.
+	Trim(now time.Time, policy retention.Policy) (retention.TrimResult, error)
 
 	// Truncate removes all records at or after to, returning the log to the
 	// state it would have had had those records never been appended.

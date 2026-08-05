@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/pulse-stream/pulse/internal/application/ports"
 	"github.com/pulse-stream/pulse/internal/domain/broker"
@@ -31,6 +32,9 @@ type Broker struct {
 	clock      ports.Clock
 	logger     ports.Logger
 	version    string
+
+	retentionInterval time.Duration
+	sweepStop         chan struct{}
 }
 
 // BrokerOptions wires a Broker to its infrastructure.
@@ -49,6 +53,9 @@ type BrokerOptions struct {
 	ReadLimit int
 	// ReadMaxBytes bounds payload bytes per subscribe read.
 	ReadMaxBytes int
+	// RetentionInterval is how often the background retention sweeper runs.
+	// Zero disables the sweeper.
+	RetentionInterval time.Duration
 }
 
 // NewBroker constructs a Broker in the Starting state.
@@ -75,6 +82,7 @@ func NewBroker(opts BrokerOptions) *Broker {
 			Address: opts.ListenAddr,
 			State:   broker.StateStarting,
 		},
+		retentionInterval: opts.RetentionInterval,
 	}
 }
 
@@ -146,6 +154,7 @@ func (b *Broker) Start(ctx context.Context) error {
 		ports.Field{Key: "address", Value: b.identity.Address},
 		ports.Field{Key: "topics", Value: len(topics)},
 	)
+	b.startSweeper()
 	return nil
 }
 
@@ -163,6 +172,7 @@ func (b *Broker) Shutdown(ctx context.Context) error {
 	if b.state.CanTransitionTo(broker.StateStopping) {
 		b.state = broker.StateStopping
 	}
+	b.stopSweeper()
 
 	var errs []error
 	for _, lg := range b.registry.Logs() {
@@ -261,6 +271,77 @@ func (b *Broker) running() error {
 		return broker.ErrNotRunning
 	}
 	return nil
+}
+
+// startSweeper launches the background retention sweeper. The caller holds
+// b.mu; the initial sweep runs asynchronously in the goroutine.
+func (b *Broker) startSweeper() {
+	if b.retentionInterval <= 0 || b.sweepStop != nil {
+		return
+	}
+	b.sweepStop = make(chan struct{})
+	stop := b.sweepStop
+	go func() {
+		b.sweep()
+		t := time.NewTicker(b.retentionInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				b.sweep()
+			case <-stop:
+				return
+			}
+		}
+	}()
+}
+
+// stopSweeper halts the background retention sweeper. The caller holds b.mu.
+func (b *Broker) stopSweeper() {
+	if b.sweepStop == nil {
+		return
+	}
+	close(b.sweepStop)
+	b.sweepStop = nil
+}
+
+// sweep applies each topic's retention policy to its partition logs. Topics
+// with compaction cleanup or no retention limits are skipped. It is called by
+// the background sweeper and is safe to call directly for tests.
+func (b *Broker) sweep() {
+	for _, t := range b.registry.Topics() {
+		if t.Config.Cleanup != topic.CleanupDelete {
+			continue
+		}
+		policy := t.Config.Retention
+		if policy.MaxAge <= 0 && policy.MaxBytes <= 0 {
+			continue
+		}
+		for p := 0; p < t.Partitions; p++ {
+			pid := partition.ID(p)
+			lg, ok := b.registry.Log(t.Name, pid)
+			if !ok {
+				continue
+			}
+			res, err := lg.Trim(b.clock.Now(), policy)
+			if err != nil {
+				b.logger.Warn("retention sweep failed",
+					ports.Field{Key: logKeyTopic, Value: t.Name.String()},
+					ports.Field{Key: logKeyPartition, Value: pid.Int32()},
+					ports.Field{Key: logKeyError, Value: err.Error()},
+				)
+				continue
+			}
+			if res.Segments > 0 {
+				b.logger.Info("retention swept",
+					ports.Field{Key: logKeyTopic, Value: t.Name.String()},
+					ports.Field{Key: logKeyPartition, Value: pid.Int32()},
+					ports.Field{Key: "segments", Value: res.Segments},
+					ports.Field{Key: "bytes", Value: res.Bytes},
+				)
+			}
+		}
+	}
 }
 
 // closeOpened closes every log opened so far during a failed startup.

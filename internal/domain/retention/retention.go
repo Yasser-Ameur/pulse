@@ -42,3 +42,11 @@ func (p Policy) Validate() error {
 	}
 	return nil
 }
+
+// TrimResult reports what a retention sweep removed from a log.
+type TrimResult struct {
+	// Segments is the number of sealed segments deleted.
+	Segments int
+	// Bytes is the number of data bytes removed from the log.
+	Bytes int64
+}

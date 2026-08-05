@@ -26,6 +26,10 @@ const (
 	DefaultDataDir         = "data"
 )
 
+// DefaultRetentionInterval is how often the retention sweeper runs (Storage.md
+// §5, §8).
+const DefaultRetentionInterval = 30 * time.Second
+
 // DefaultShutdownGrace is how long the server waits for graceful drain before
 // force-closing in-flight RPCs (Concurrency.md §6).
 const DefaultShutdownGrace = 10 * time.Second
@@ -62,6 +66,9 @@ type Storage struct {
 	SyncMode string `yaml:"sync-mode" json:"sync-mode"`
 	// SyncInterval is the fsync period for interval mode.
 	SyncInterval Duration `yaml:"sync-interval" json:"sync-interval"`
+	// RetentionInterval is how often the retention sweeper runs; zero disables
+	// the background sweeper.
+	RetentionInterval Duration `yaml:"retention-interval" json:"retention-interval"`
 }
 
 // Subscribe bounds a single subscribe read.
@@ -86,6 +93,7 @@ func Default() Config {
 			IndexIntervalBytes: DefaultIndexInterval,
 			SyncMode:           "every-write",
 			SyncInterval:       Duration(100 * time.Millisecond),
+			RetentionInterval:  Duration(DefaultRetentionInterval),
 		},
 		Subscribe: Subscribe{
 			ReadLimit:    512,
@@ -166,6 +174,9 @@ func (c Config) Validate() error {
 	}
 	if c.Storage.SyncInterval <= 0 {
 		errs = append(errs, errors.New("storage.sync-interval must be positive"))
+	}
+	if c.Storage.RetentionInterval < 0 {
+		errs = append(errs, errors.New("storage.retention-interval must not be negative"))
 	}
 	if c.Subscribe.ReadLimit <= 0 {
 		errs = append(errs, errors.New("subscribe.read-limit must be positive"))

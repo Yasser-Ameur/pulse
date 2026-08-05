@@ -50,22 +50,23 @@ func Run(cfg config.Config) error {
 		return err
 	}
 
-	factory := log.NewFactory(cfg.DataDir+"/topics", log.Config{
+	factory := log.NewFactory(cfg.DataDir, log.Config{
 		MaxSegmentBytes: cfg.Storage.SegmentMaxBytes,
 		IndexInterval:   cfg.Storage.IndexIntervalBytes,
 		SyncMode:        log.SyncMode(cfg.Storage.SyncMode),
 		SyncInterval:    cfg.Storage.SyncInterval.Duration()}, logger)
 
 	app := services.NewBroker(services.BrokerOptions{
-		MetadataStore: meta,
-		LogFactory:    factory,
-		Clock:         clock,
-		Logger:        logger,
-		Metrics:       recorder,
-		ListenAddr:    cfg.ListenAddr,
-		Version:       Version,
-		ReadLimit:     cfg.Subscribe.ReadLimit,
-		ReadMaxBytes:  cfg.Subscribe.ReadMaxBytes,
+		MetadataStore:     meta,
+		LogFactory:        factory,
+		Clock:             clock,
+		Logger:            logger,
+		Metrics:           recorder,
+		ListenAddr:        cfg.ListenAddr,
+		Version:           Version,
+		ReadLimit:         cfg.Subscribe.ReadLimit,
+		ReadMaxBytes:      cfg.Subscribe.ReadMaxBytes,
+		RetentionInterval: cfg.Storage.RetentionInterval.Duration(),
 	})
 
 	if err := app.Start(context.Background()); err != nil {

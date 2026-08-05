@@ -119,7 +119,7 @@ func (m *TopicManager) rollbackCreate(ctx context.Context, t topic.Topic, create
 			m.logger.Error("failed to roll back partition log",
 				ports.Field{Key: logKeyTopic, Value: t.Name.String()},
 				ports.Field{Key: logKeyPartition, Value: ref.partition.Int32()},
-				ports.Field{Key: "error", Value: err},
+				ports.Field{Key: logKeyError, Value: err},
 			)
 		}
 	}

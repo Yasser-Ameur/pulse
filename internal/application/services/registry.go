@@ -16,6 +16,7 @@ import (
 const (
 	logKeyTopic     = "topic"
 	logKeyPartition = "partition"
+	logKeyError     = "error"
 )
 
 // partitionKey uniquely identifies a partition across all topics.

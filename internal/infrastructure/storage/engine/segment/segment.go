@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pulse-stream/pulse/internal/domain/message"
 	"github.com/pulse-stream/pulse/internal/domain/offset"
@@ -91,6 +92,27 @@ func (s *Segment) File() *os.File { return s.file }
 
 // Path returns the data file path.
 func (s *Segment) Path() string { return s.path }
+
+// LastTimestamp returns the newest record timestamp in the segment, read from
+// the last batch. Scanning starts at the last index entry so the cost is
+// bounded by one index interval of decode. Batches are time-ordered, so the
+// last batch's LastTimestamp is the segment's maximum. Not synchronized; the
+// caller must hold the log's writer lock.
+func (s *Segment) LastTimestamp() (time.Time, error) {
+	from := int64(0)
+	if pos, ok := s.index.LastPosition(); ok {
+		from = pos
+	}
+	var last time.Time
+	err := s.ScanBatches(from, func(_ int64, _ int64, batch *message.RecordBatch) error {
+		last = batch.LastTimestamp
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	return last, nil
+}
 
 // Append writes an already-encoded batch starting at the segment's current
 // LEO and advances the segment state. recordCount is the batch's record count.

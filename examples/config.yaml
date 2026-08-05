@@ -10,6 +10,7 @@ storage:
   index-interval-bytes: 4096
   sync-mode: "every-write"
   sync-interval: "100ms"
+  retention-interval: "30s"
 subscribe:
   read-limit: 512
   read-max-bytes: 1048576

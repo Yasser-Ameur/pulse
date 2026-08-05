@@ -13,6 +13,7 @@ import (
 	"github.com/pulse-stream/pulse/internal/domain/message"
 	"github.com/pulse-stream/pulse/internal/domain/offset"
 	"github.com/pulse-stream/pulse/internal/domain/partition"
+	"github.com/pulse-stream/pulse/internal/domain/retention"
 	"github.com/pulse-stream/pulse/internal/domain/storage"
 	"github.com/pulse-stream/pulse/internal/domain/topic"
 )
@@ -28,6 +29,7 @@ func (c *fakeClock) Now() time.Time { return c.now }
 type fakeLogger struct {
 	mu    sync.Mutex
 	infos []string
+	warns []string
 	errs  []string
 }
 
@@ -37,7 +39,11 @@ func (l *fakeLogger) Info(msg string, _ ...ports.Field) {
 	defer l.mu.Unlock()
 	l.infos = append(l.infos, msg)
 }
-func (l *fakeLogger) Warn(_ string, _ ...ports.Field) {}
+func (l *fakeLogger) Warn(msg string, _ ...ports.Field) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.warns = append(l.warns, msg)
+}
 func (l *fakeLogger) Error(msg string, _ ...ports.Field) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -57,12 +63,16 @@ func (fakeMetrics) RecordBytesRead(int64)              {}
 
 // fakeLog is an in-memory storage.Log.
 type fakeLog struct {
-	mu        sync.Mutex
-	records   []message.Record
-	closed    bool
-	synced    int
-	appendErr error
-	notify    chan struct{}
+	mu         sync.Mutex
+	records    []message.Record
+	closed     bool
+	synced     int
+	appendErr  error
+	notify     chan struct{}
+	trimCalls  int
+	trimErr    error
+	trimResult retention.TrimResult
+	lastPolicy retention.Policy
 }
 
 func newFakeLog() *fakeLog { return &fakeLog{notify: make(chan struct{})} }
@@ -125,6 +135,14 @@ func (l *fakeLog) Sync() error {
 	defer l.mu.Unlock()
 	l.synced++
 	return nil
+}
+
+func (l *fakeLog) Trim(_ time.Time, p retention.Policy) (retention.TrimResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.trimCalls++
+	l.lastPolicy = p
+	return l.trimResult, l.trimErr
 }
 
 func (l *fakeLog) Truncate(to offset.Offset) error {

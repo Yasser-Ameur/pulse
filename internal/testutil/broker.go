@@ -26,6 +26,9 @@ type Options struct {
 	Dir string
 	// Logger overrides the nop logger, e.g. for debugging.
 	Logger ports.Logger
+	// IndexInterval sets the sparse index entry spacing for partition logs;
+	// zero uses the engine default.
+	IndexInterval int64
 }
 
 // Instance is a running broker with its gRPC transport.
@@ -56,7 +59,7 @@ func Start(t *testing.T, opts Options) *Instance {
 	if err != nil {
 		t.Fatalf("open metadata: %v", err)
 	}
-	factory := log.NewFactory(dir+"/topics", log.Config{}, logger)
+	factory := log.NewFactory(dir, log.Config{IndexInterval: opts.IndexInterval}, logger)
 	app := services.NewBroker(services.BrokerOptions{
 		MetadataStore: meta,
 		LogFactory:    factory,
@@ -90,25 +93,26 @@ func Start(t *testing.T, opts Options) *Instance {
 		srv:  srv,
 		ln:   ln,
 	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		srv.GracefulStop(ctx)
-		_ = app.Shutdown(ctx)
-	})
+	t.Cleanup(func() { inst.Stop(t) })
 	return inst
+}
+
+// Stop drains the transport and shuts down the broker, closing every storage
+// handle (including writing each partition's recovery snapshot). Safe to call
+// more than once.
+func (i *Instance) Stop(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	i.srv.GracefulStop(ctx)
+	_ = i.app.Shutdown(ctx)
+	_ = i.ln.Close()
 }
 
 // Restart stops the instance (draining transport and broker) and starts a fresh
 // broker over the same data directory, verifying durability.
 func (i *Instance) Restart(t *testing.T) *Instance {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	i.srv.GracefulStop(ctx)
-	if err := i.app.Shutdown(ctx); err != nil {
-		t.Fatalf("shutdown: %v", err)
-	}
-	_ = i.ln.Close()
+	i.Stop(t)
 	return Start(t, Options{Dir: i.Dir})
 }

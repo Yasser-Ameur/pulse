@@ -20,10 +20,12 @@ import (
 	"github.com/pulse-stream/pulse/internal/domain/message"
 	"github.com/pulse-stream/pulse/internal/domain/offset"
 	"github.com/pulse-stream/pulse/internal/domain/partition"
+	"github.com/pulse-stream/pulse/internal/domain/retention"
 	"github.com/pulse-stream/pulse/internal/domain/topic"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/codec"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/recovery"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/segment"
+	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/snapshot"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
 )
 
@@ -139,6 +141,12 @@ func OpenLog(root string, name topic.Name, pid partition.ID, cfg Config, logger 
 		}
 	}
 	l.nextOffset = l.active.NextOffset()
+	if res.SnapshotUsed && logger != nil {
+		logger.Info("recovered log from snapshot",
+			ports.Field{Key: "topic", Value: name.String()},
+			ports.Field{Key: "partition", Value: pid.Int32()},
+		)
+	}
 	l.startFlusher()
 	return l, nil
 }
@@ -280,6 +288,83 @@ func (l *Log) Read(ctx context.Context, from offset.Offset, limit int, maxBytes 
 	return out, nil
 }
 
+// Trim applies the retention policy at now, deleting a prefix of sealed
+// segments that fall entirely outside the retention window. The active segment
+// is never deleted and offsets of surviving records never change. Both policy
+// limits are applied independently; a zero limit is ignored. Safe for
+// concurrent use.
+func (l *Log) Trim(now time.Time, policy retention.Policy) (retention.TrimResult, error) {
+	if policy.MaxAge <= 0 && policy.MaxBytes <= 0 {
+		return retention.TrimResult{}, nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return retention.TrimResult{}, ErrClosed
+	}
+	var res retention.TrimResult
+
+	// Time-based retention: drop a prefix of sealed segments whose newest
+	// record predates the cutoff. Batches are time-ordered across segments, so
+	// the first segment inside the window ends the sweep.
+	if policy.MaxAge > 0 {
+		cutoff := now.Add(-policy.MaxAge)
+		n := 0
+		for n < len(l.segments)-1 {
+			ts, err := l.segments[n].LastTimestamp()
+			if err != nil {
+				return res, err
+			}
+			if !ts.Before(cutoff) {
+				break
+			}
+			n++
+		}
+		if err := l.dropSealed(n, &res); err != nil {
+			return res, err
+		}
+	}
+
+	// Size-based retention: drop the oldest sealed segments while the log's
+	// total size (including the protected active segment) exceeds the budget.
+	if policy.MaxBytes > 0 {
+		total := int64(0)
+		for _, seg := range l.segments {
+			total += seg.Size()
+		}
+		n := 0
+		for n < len(l.segments)-1 && total > policy.MaxBytes {
+			total -= l.segments[n].Size()
+			n++
+		}
+		if err := l.dropSealed(n, &res); err != nil {
+			return res, err
+		}
+	}
+	return res, nil
+}
+
+// dropSealed closes and deletes the first n sealed segments, removing them
+// from the segment list and accumulating the result. The caller holds l.mu.
+func (l *Log) dropSealed(n int, res *retention.TrimResult) error {
+	for i := 0; i < n; i++ {
+		seg := l.segments[i]
+		res.Segments++
+		res.Bytes += seg.Size()
+		if err := seg.Close(); err != nil {
+			return err
+		}
+		if err := os.Remove(seg.Path()); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Remove(filesystem.SegmentIndexPath(l.dir, seg.Base())); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	l.segments = l.segments[n:]
+	return nil
+}
+
 // NextOffset returns the offset the next append receives.
 func (l *Log) NextOffset() offset.Offset {
 	l.mu.RLock()
@@ -369,6 +454,7 @@ func (l *Log) Truncate(to offset.Offset) error {
 	l.nextOffset = newNext
 	close(l.notify)
 	l.notify = make(chan struct{})
+	l.writeSnapshot()
 	return nil
 }
 
@@ -388,6 +474,7 @@ func (l *Log) Close() error {
 			errs = append(errs, err)
 		}
 	}
+	l.writeSnapshot()
 	l.closed = true
 	return errors.Join(errs...)
 }
@@ -405,7 +492,25 @@ func (l *Log) rotate() error {
 	}
 	l.segments = append(l.segments, seg)
 	l.active = seg
+	l.writeSnapshot()
 	return nil
+}
+
+// writeSnapshot durably checkpoints the log's LEO and active segment state so
+// a future recovery can skip the scan-from-epoch. It is best-effort: the
+// snapshot is an optimization, so a failed write only costs a slower recovery.
+// The caller holds l.mu.
+func (l *Log) writeSnapshot() {
+	st := snapshot.State{
+		LEO:        l.nextOffset,
+		ActiveBase: l.active.Base(),
+		ActiveSize: l.active.Size(),
+		ActiveNext: l.active.NextOffset(),
+	}
+	if err := snapshot.Write(l.dir, st); err != nil && l.logger != nil {
+		l.logger.Warn("write recovery snapshot failed",
+			ports.Field{Key: "error", Value: err.Error()})
+	}
 }
 
 // startFlusher runs the periodic sync for SyncInterval mode.
