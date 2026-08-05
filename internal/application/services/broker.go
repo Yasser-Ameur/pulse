@@ -1,0 +1,271 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"sync"
+
+	"github.com/pulse-stream/pulse/internal/application/ports"
+	"github.com/pulse-stream/pulse/internal/domain/broker"
+	"github.com/pulse-stream/pulse/internal/domain/consumer"
+	"github.com/pulse-stream/pulse/internal/domain/message"
+	"github.com/pulse-stream/pulse/internal/domain/offset"
+	"github.com/pulse-stream/pulse/internal/domain/partition"
+	"github.com/pulse-stream/pulse/internal/domain/storage"
+	"github.com/pulse-stream/pulse/internal/domain/topic"
+)
+
+// Broker is the application facade: it owns the broker lifecycle, identity,
+// and the delegation of every operation to the specialized services. It is the
+// single entry point used by the gRPC adapter.
+type Broker struct {
+	mu         sync.Mutex
+	state      broker.State
+	identity   broker.Broker
+	registry   *LogRegistry
+	topics     *TopicManager
+	publisher  *Publisher
+	subscriber *Subscriber
+	store      ports.MetadataStore
+	factory    ports.LogFactory
+	clock      ports.Clock
+	logger     ports.Logger
+	version    string
+}
+
+// BrokerOptions wires a Broker to its infrastructure.
+type BrokerOptions struct {
+	MetadataStore ports.MetadataStore
+	LogFactory    ports.LogFactory
+	Clock         ports.Clock
+	Logger        ports.Logger
+	Metrics       ports.MetricsRecorder
+	// ListenAddr is the address clients connect to; it is reported by
+	// BrokerInfo.
+	ListenAddr string
+	// Version is the broker release version reported by BrokerInfo.
+	Version string
+	// ReadLimit bounds records per subscribe read.
+	ReadLimit int
+	// ReadMaxBytes bounds payload bytes per subscribe read.
+	ReadMaxBytes int
+}
+
+// NewBroker constructs a Broker in the Starting state.
+func NewBroker(opts BrokerOptions) *Broker {
+	registry := NewLogRegistry()
+	topics := NewTopicManager(opts.MetadataStore, opts.LogFactory, registry, opts.Clock, opts.Logger)
+	publisher := NewPublisher(registry, opts.Clock, opts.Logger, opts.Metrics)
+	subscriber := NewSubscriber(registry, opts.MetadataStore, SubscriberOptions{
+		ReadLimit:    opts.ReadLimit,
+		ReadMaxBytes: opts.ReadMaxBytes,
+	}, opts.Logger, opts.Metrics)
+	return &Broker{
+		state:      broker.StateStarting,
+		registry:   registry,
+		topics:     topics,
+		publisher:  publisher,
+		subscriber: subscriber,
+		store:      opts.MetadataStore,
+		factory:    opts.LogFactory,
+		clock:      opts.Clock,
+		logger:     opts.Logger,
+		version:    opts.Version,
+		identity: broker.Broker{
+			Address: opts.ListenAddr,
+			State:   broker.StateStarting,
+		},
+	}
+}
+
+// Start drives the broker through identity establishment and log recovery into
+// the Running state.
+func (b *Broker) Start(ctx context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.state.CanTransitionTo(broker.StateRecovering) {
+		return broker.ErrInvalidTransition
+	}
+	b.state = broker.StateRecovering
+
+	now := b.clock.Now()
+	clusterID, ok, err := b.store.ClusterID(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		clusterID = broker.NewClusterID(now)
+		if err := b.store.CreateCluster(ctx, clusterID); err != nil {
+			return err
+		}
+	}
+	id, ok, err := b.store.BrokerID(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		id = broker.NewBrokerID(now)
+		if err := b.store.CreateBroker(ctx, id); err != nil {
+			return err
+		}
+	}
+	b.identity.ClusterID = clusterID
+	b.identity.BrokerID = id
+	b.identity.NodeID = broker.NodeID(id) // single-node deployments share node and broker id
+	b.identity.Version = b.version
+
+	topics, err := b.store.ListTopics(ctx)
+	if err != nil {
+		return err
+	}
+	var opened []storage.Log
+	for _, t := range topics {
+		for p := 0; p < t.Partitions; p++ {
+			pid := partition.ID(p)
+			lg, err := b.factory.Open(ctx, t.Name, pid)
+			if err != nil {
+				if errors.Is(err, ports.ErrLogNotFound) {
+					// Metadata without storage: recreate the partition log.
+					lg, err = b.factory.Create(ctx, t.Name, pid)
+				}
+				if err != nil {
+					b.closeOpened(opened)
+					return err
+				}
+			}
+			b.registry.RegisterLog(t.Name, pid, lg)
+			opened = append(opened, lg)
+		}
+		b.registry.RegisterTopic(t)
+	}
+	b.identity.StartedAt = b.clock.Now()
+	b.state = broker.StateRunning
+	b.logger.Info("broker started",
+		ports.Field{Key: "cluster_id", Value: string(clusterID)},
+		ports.Field{Key: "broker_id", Value: string(id)},
+		ports.Field{Key: "address", Value: b.identity.Address},
+		ports.Field{Key: "topics", Value: len(topics)},
+	)
+	return nil
+}
+
+// Shutdown drains the broker, flushes and closes all logs, closes the metadata
+// store, and reaches the Stopped state. It is idempotent.
+func (b *Broker) Shutdown(ctx context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.state == broker.StateStopped {
+		return nil
+	}
+	if b.state == broker.StateRunning {
+		b.state = broker.StateDraining
+	}
+	if b.state.CanTransitionTo(broker.StateStopping) {
+		b.state = broker.StateStopping
+	}
+
+	var errs []error
+	for _, lg := range b.registry.Logs() {
+		if err := lg.Sync(); err != nil {
+			errs = append(errs, err)
+		}
+		if err := lg.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if err := b.store.Close(); err != nil {
+		errs = append(errs, err)
+	}
+	b.state = broker.StateStopped
+	b.logger.Info("broker stopped")
+	return errors.Join(errs...)
+}
+
+// State returns the current broker lifecycle state.
+func (b *Broker) State() broker.State {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.state
+}
+
+// BrokerInfo returns the broker identity with the current lifecycle state.
+func (b *Broker) BrokerInfo() broker.Broker {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	info := b.identity
+	info.State = b.state
+	return info
+}
+
+// Publish validates and durably appends messages to a topic partition,
+// returning the assigned offsets aligned with the input messages.
+func (b *Broker) Publish(ctx context.Context, name topic.Name, id partition.ID, msgs []message.Message) ([]offset.Offset, error) {
+	if err := b.running(); err != nil {
+		return nil, err
+	}
+	t, ok := b.registry.Topic(name)
+	if !ok {
+		return nil, topic.ErrNotFound
+	}
+	if !id.Valid(t.Partitions) {
+		return nil, partition.ErrNotFound
+	}
+	return b.publisher.Publish(ctx, t, id, msgs)
+}
+
+// Subscribe streams records for sub to emit.
+func (b *Broker) Subscribe(ctx context.Context, sub consumer.Subscription, emit func([]message.Record) error) error {
+	if err := b.running(); err != nil {
+		return err
+	}
+	return b.subscriber.Subscribe(ctx, sub, emit)
+}
+
+// Ack advances a consumer's stored cursor.
+func (b *Broker) Ack(ctx context.Context, c consumer.ID, name topic.Name, id partition.ID, o offset.Offset) (offset.Offset, error) {
+	if err := b.running(); err != nil {
+		return offset.Invalid, err
+	}
+	return b.subscriber.Ack(ctx, c, name, id, o)
+}
+
+// CreateTopic delegates to the topic manager.
+func (b *Broker) CreateTopic(ctx context.Context, name string, cfg topic.Config, partitions int) (topic.Topic, error) {
+	if err := b.running(); err != nil {
+		return topic.Topic{}, err
+	}
+	return b.topics.CreateTopic(ctx, name, cfg, partitions)
+}
+
+// DeleteTopic delegates to the topic manager.
+func (b *Broker) DeleteTopic(ctx context.Context, name string) error {
+	if err := b.running(); err != nil {
+		return err
+	}
+	return b.topics.DeleteTopic(ctx, name)
+}
+
+// ListTopics delegates to the topic manager.
+func (b *Broker) ListTopics(ctx context.Context) ([]topic.Topic, error) {
+	if err := b.running(); err != nil {
+		return nil, err
+	}
+	return b.topics.ListTopics(ctx)
+}
+
+// running returns ErrNotRunning unless the broker is serving requests.
+func (b *Broker) running() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.state != broker.StateRunning {
+		return broker.ErrNotRunning
+	}
+	return nil
+}
+
+// closeOpened closes every log opened so far during a failed startup.
+func (b *Broker) closeOpened(logs []storage.Log) {
+	for _, lg := range logs {
+		_ = lg.Close()
+	}
+}
