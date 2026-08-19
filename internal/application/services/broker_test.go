@@ -383,6 +383,8 @@ func TestBrokerSweepReportsFailuresAndRemovals(t *testing.T) {
 
 	b.sweep()
 
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
 	if !containsMsg(logger.warns, "retention sweep failed") {
 		t.Fatalf("warns logged = %v, want retention sweep failed", logger.warns)
 	}
