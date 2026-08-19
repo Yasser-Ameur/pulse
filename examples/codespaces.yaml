@@ -1,0 +1,15 @@
+listen-addr: "0.0.0.0:9090"
+data-dir: "/data"
+log-level: "info"
+development: true
+shutdown-grace: "10s"
+storage:
+  segment-max-bytes: 536870912
+  index-interval-bytes: 4096
+  sync-mode: "every-write"
+  sync-interval: "100ms"
+  retention-interval: "30s"
+subscribe:
+  read-limit: 512
+  read-max-bytes: 1048576
+
