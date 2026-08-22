@@ -62,19 +62,22 @@ func run(addr string) error {
 		Topic:     name,
 		Partition: partition.ID(0),
 	}
-	var last offset.Offset
+	// A stored cursor is the NEXT offset to consume, so acknowledge one past
+	// the last record processed (docs/Guarantees.md §3). Acking the last
+	// delivered offset would redeliver that record on every resume.
+	var next offset.Offset
 	err = c.Subscribe(ctx, sub, func(r message.Record) error {
 		fmt.Printf("%d\t%s\n", r.Offset, r.Message.Payload)
-		last = r.Offset
+		next = r.Offset + 1
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("subscribe: %w", err)
 	}
 
-	if _, err := c.Ack(ctx, sub.Consumer, name, sub.Partition, last); err != nil {
+	if _, err := c.Ack(ctx, sub.Consumer, name, sub.Partition, next); err != nil {
 		return fmt.Errorf("ack: %w", err)
 	}
-	log.Printf("acked up to offset %d", last)
+	log.Printf("acked; this consumer resumes at offset %d", next)
 	return nil
 }
