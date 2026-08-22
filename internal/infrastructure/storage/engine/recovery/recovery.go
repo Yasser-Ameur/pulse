@@ -106,7 +106,8 @@ func runFull(dir string, indexInterval int64) (*Result, error) {
 				_ = seg.Close()
 				return nil, fmt.Errorf("recover %s: %w", path, err)
 			}
-		} else if err := seg.RecoverFrom(validSize, nextOffset, entries); err != nil {
+		}
+		if err := seg.RecoverFrom(validSize, nextOffset, entries); err != nil {
 			_ = seg.Close()
 			return nil, fmt.Errorf("recover %s: %w", path, err)
 		}
@@ -229,7 +230,8 @@ func runWithSnapshot(dir string, indexInterval int64, st snapshot.State) (res *R
 				_ = seg.Close()
 				return nil, false, err
 			}
-		} else if err := seg.RecoverFrom(validSize, next, append(prefix, tail...)); err != nil {
+		}
+		if err := seg.RecoverFrom(validSize, next, append(prefix, tail...)); err != nil {
 			_ = seg.Close()
 			return nil, false, err
 		}
@@ -306,18 +308,19 @@ func restoreByScan(path string, base offset.Offset, indexInterval int64, active 
 		_ = seg.Close()
 		return nil, err
 	}
+	sr := &scanResult{seg: seg, truncated: torn}
 	if torn {
 		if err := seg.TruncateTo(validSize, next); err != nil {
 			_ = seg.Close()
 			return nil, err
 		}
-		return &scanResult{seg: seg, truncated: true, truncBytes: size - validSize}, nil
+		sr.truncBytes = size - validSize
 	}
 	if err := seg.RecoverFrom(validSize, next, entries); err != nil {
 		_ = seg.Close()
 		return nil, err
 	}
-	return &scanResult{seg: seg}, nil
+	return sr, nil
 }
 
 // loadPrefixEntries returns the persisted index entries at positions before
