@@ -73,12 +73,20 @@ func Run(dir string, indexInterval int64) (*Result, error) {
 
 // runFull scans every segment and rebuilds state from the data. This is the
 // correctness baseline used whenever no trustworthy snapshot exists.
-func runFull(dir string, indexInterval int64) (*Result, error) {
+func runFull(dir string, indexInterval int64) (res *Result, err error) {
 	files, err := filesystem.SegmentFiles(dir)
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{}
+	res = &Result{}
+	var opened []*segment.Segment
+	defer func() {
+		if err != nil {
+			for _, s := range opened {
+				_ = s.Close()
+			}
+		}
+	}()
 	for i, path := range files {
 		last := i == len(files)-1
 		base, err := filesystem.ParseSegmentName(filepath.Base(trimExt(path)))
@@ -111,6 +119,7 @@ func runFull(dir string, indexInterval int64) (*Result, error) {
 			_ = seg.Close()
 			return nil, fmt.Errorf("recover %s: %w", path, err)
 		}
+		opened = append(opened, seg)
 		res.Segments = append(res.Segments, seg)
 	}
 	return res, nil
