@@ -24,3 +24,8 @@ Thumbs.db
 # Coverage
 coverage.out
 *.coverprofile
+
+# Benchmark harness artifacts
+/bench/bin/
+/bench/results/
+/bench/tmp/
