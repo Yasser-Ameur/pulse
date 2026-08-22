@@ -288,6 +288,8 @@ func restoreFromIndex(path string, base, nextOffset offset.Offset, indexInterval
 		_ = seg.Close()
 		return nil, false, err
 	}
+	// These entries came out of the index file itself, so it is already current.
+	seg.MarkIndexPersisted()
 	return seg, true, nil
 }
 
