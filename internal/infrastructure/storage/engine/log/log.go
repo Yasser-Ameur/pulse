@@ -220,7 +220,7 @@ func (l *Log) Append(ctx context.Context, batch *message.RecordBatch) (offset.Of
 	close(l.notify)
 	l.notify = make(chan struct{})
 	if l.cfg.SyncMode != SyncInterval {
-		if err := l.active.Sync(); err != nil {
+		if err := l.active.SyncData(); err != nil {
 			l.mu.Unlock()
 			return base, err
 		}

@@ -31,7 +31,12 @@ type Segment struct {
 	size          int64
 	indexInterval int64
 	nextIndexAt   int64
-	closed        bool
+	// indexPersisted is the entry count of the index last written to
+	// indexPath. Entries are only ever appended between persists — the one
+	// operation that removes them, TruncateTo, persists eagerly — so an equal
+	// count means the file already holds the current index.
+	indexPersisted int
+	closed         bool
 }
 
 // Open opens (creating if needed) the segment data file at path, which must be
@@ -62,6 +67,12 @@ func Open(path string, base offset.Offset, indexInterval int64) (*Segment, error
 
 // RecoverFrom replaces the segment's runtime state with recovery output: the
 // valid data size, the segment LEO, and the rebuilt index entries.
+//
+// It assumes indexPath does NOT hold these entries, so the next persist writes
+// them. That is the safe assumption: recovery rebuilds an index by scanning
+// exactly when the file was missing or corrupt, and a needless write costs one
+// atomic rename on a cold path. Only a caller that just read the index out of
+// indexPath may overturn it, by calling MarkIndexPersisted.
 func (s *Segment) RecoverFrom(size int64, nextOffset offset.Offset, entries []index.Entry) error {
 	if size < 0 || nextOffset < s.base {
 		return fmt.Errorf("%w: invalid recovered state", os.ErrInvalid)
@@ -75,7 +86,16 @@ func (s *Segment) RecoverFrom(size int64, nextOffset offset.Offset, entries []in
 		}
 	}
 	s.nextIndexAt = size + s.indexInterval
+	s.indexPersisted = 0
 	return nil
+}
+
+// MarkIndexPersisted records that indexPath already holds the segment's
+// current index, letting the next persist skip a write that would reproduce
+// the file byte for byte. Only a caller that loaded the index from that file
+// may say this; one that rebuilt it by scanning must not.
+func (s *Segment) MarkIndexPersisted() {
+	s.indexPersisted = s.index.Len()
 }
 
 // Base returns the segment's first offset.
@@ -187,7 +207,10 @@ func (s *Segment) TruncateTo(validSize int64, newNextOffset offset.Offset) error
 	s.nextOffset = newNextOffset
 	s.index.TruncateTo(uint32(newNextOffset - s.base))
 	s.nextIndexAt = validSize + s.indexInterval
-	return nil
+	// Persist eagerly: later appends reuse the released positions, so a
+	// persisted entry pointing past the truncation point would map an offset
+	// to the middle of a batch written after it.
+	return s.persistIndex()
 }
 
 // Seal syncs the segment and persists its index without closing the data
@@ -200,15 +223,36 @@ func (s *Segment) Seal() error {
 	return s.Sync()
 }
 
-// Sync fsyncs the data file and atomically persists the index.
+// SyncData fsyncs only the data file. This is the whole durability
+// requirement of an acknowledged append: the sparse index is a cache that
+// recovery rebuilds from the data, and a shorter index file is a valid prefix
+// that only costs a longer forward scan. Callers on the append hot path want
+// this rather than Sync.
+func (s *Segment) SyncData() error {
+	return s.file.Sync()
+}
+
+// Sync fsyncs the data file and atomically persists the index when it has
+// gained entries since the last persist. Reserved for the points where the
+// index write is worth its three fsyncs: seal, close, the interval-sync tick,
+// and an explicit log sync.
 func (s *Segment) Sync() error {
-	if err := s.file.Sync(); err != nil {
+	if err := s.SyncData(); err != nil {
 		return err
 	}
-	if s.index.Len() == 0 {
+	return s.persistIndex()
+}
+
+// persistIndex atomically writes the index unless the file already holds it.
+func (s *Segment) persistIndex() error {
+	if s.index.Len() == s.indexPersisted {
 		return nil
 	}
-	return filesystem.AtomicWriteFile(s.indexPath, s.index.Encode())
+	if err := filesystem.AtomicWriteFile(s.indexPath, s.index.Encode()); err != nil {
+		return err
+	}
+	s.indexPersisted = s.index.Len()
+	return nil
 }
 
 // Close syncs and closes the segment's files.
