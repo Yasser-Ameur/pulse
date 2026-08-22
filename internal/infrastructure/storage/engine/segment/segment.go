@@ -163,15 +163,23 @@ func (s *Segment) PositionFor(o offset.Offset) (int64, bool) {
 // uses positional reads so that concurrent readers never contend on the
 // shared file offset.
 func (s *Segment) ScanBatches(from int64, fn func(pos, end int64, batch *message.RecordBatch) error) error {
+	return s.ScanRange(from, s.size, fn)
+}
+
+// ScanRange is ScanBatches bounded by an explicit end position instead of the
+// segment's current size. It touches no mutable segment field, so a caller that
+// captured from and end under the log's lock can run the decode after dropping
+// it and leave the append path free.
+func (s *Segment) ScanRange(from, end int64, fn func(pos, end int64, batch *message.RecordBatch) error) error {
 	pos := from
 	header := make([]byte, codec.HeaderSize)
-	for pos < s.size {
+	for pos < end {
 		if _, err := s.file.ReadAt(header, pos); err != nil {
 			return err
 		}
 		batchLen := binary.BigEndian.Uint32(header[16:20])
 		total := int64(codec.HeaderSize) + int64(batchLen)
-		if pos+total > s.size {
+		if pos+total > end {
 			return fmt.Errorf("%w: batch overruns segment", codec.ErrTruncated)
 		}
 		body := make([]byte, total)

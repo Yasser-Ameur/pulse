@@ -2,10 +2,11 @@
 // engine's implementation of the domain storage.Log port).
 //
 // A log is a sequence of segments (docs/Storage.md §2, §5). Appends go
-// through a single writer lock; reads take a shared lock and use positional
-// file reads so concurrent subscribers never contend on a file offset. The
-// sparse index is rebuilt from data on recovery, and a torn tail is truncated
-// at the last CRC-valid batch.
+// through a single writer lock; reads take that lock only long enough to
+// capture which segments and byte ranges to walk, then decode outside it and
+// use positional file reads, so neither a publish nor another subscriber waits
+// on a scan. The sparse index is rebuilt from data on recovery, and a torn tail
+// is truncated at the last CRC-valid batch.
 package log
 
 import (
@@ -91,6 +92,12 @@ type Log struct {
 	pid     partition.ID
 	logger  ports.Logger
 
+	// scanMu is held for reading across a Read's decode and for writing by the
+	// operations that close or shorten a segment file under a reader. It is
+	// deliberately never taken by Append: mu is dropped before the decode
+	// starts, so a publish waits on a reader for the snapshot only, not for the
+	// scan.
+	scanMu     sync.RWMutex
 	mu         sync.RWMutex
 	segments   []*segment.Segment
 	active     *segment.Segment
@@ -238,30 +245,18 @@ func (l *Log) Read(ctx context.Context, from offset.Offset, limit int, maxBytes 
 	if !from.Valid() {
 		return nil, offset.ErrInvalid
 	}
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	if l.closed {
-		return nil, ErrClosed
-	}
-	if from >= l.nextOffset {
-		return nil, nil
-	}
-	segIdx := 0
-	for segIdx < len(l.segments) && from >= l.segments[segIdx].NextOffset() {
-		segIdx++
+	l.scanMu.RLock()
+	defer l.scanMu.RUnlock()
+	targets, err := l.scanTargets(from)
+	if err != nil {
+		return nil, err
 	}
 	var out []message.Record
 	payloadBytes := 0
 	stop := false
-	for segIdx < len(l.segments) && !stop {
-		seg := l.segments[segIdx]
-		startPos := int64(0)
-		if from < seg.Base() {
-			startPos = 0
-		} else if p, ok := seg.PositionFor(from); ok {
-			startPos = p
-		}
-		err := seg.ScanBatches(startPos, func(_ int64, _ int64, batch *message.RecordBatch) error {
+	for i := 0; i < len(targets) && !stop; i++ {
+		tgt := targets[i]
+		err := tgt.seg.ScanRange(tgt.start, tgt.end, func(_ int64, _ int64, batch *message.RecordBatch) error {
 			for i := range batch.Records {
 				r := batch.Records[i]
 				if r.Offset < from {
@@ -283,9 +278,48 @@ func (l *Log) Read(ctx context.Context, from offset.Offset, limit int, maxBytes 
 		if err != nil && !errors.Is(err, errStop) {
 			return nil, err
 		}
-		segIdx++
 	}
 	return out, nil
+}
+
+// scanTarget is one segment a read must walk, with the byte range to walk in
+// it captured at snapshot time.
+type scanTarget struct {
+	seg   *segment.Segment
+	start int64
+	end   int64
+}
+
+// scanTargets resolves, under the metadata lock, which segments a read from
+// `from` must walk and where in each to start and stop. Capturing the ranges
+// here is what lets the decode run outside the lock: every mutable field the
+// scan would otherwise read off a segment — its size and its sparse index — is
+// read while a writer is excluded, so the scan itself touches none.
+func (l *Log) scanTargets(from offset.Offset) ([]scanTarget, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.closed {
+		return nil, ErrClosed
+	}
+	if from >= l.nextOffset {
+		return nil, nil
+	}
+	segIdx := 0
+	for segIdx < len(l.segments) && from >= l.segments[segIdx].NextOffset() {
+		segIdx++
+	}
+	targets := make([]scanTarget, 0, len(l.segments)-segIdx)
+	for ; segIdx < len(l.segments); segIdx++ {
+		seg := l.segments[segIdx]
+		startPos := int64(0)
+		if from >= seg.Base() {
+			if p, ok := seg.PositionFor(from); ok {
+				startPos = p
+			}
+		}
+		targets = append(targets, scanTarget{seg: seg, start: startPos, end: seg.Size()})
+	}
+	return targets, nil
 }
 
 // Trim applies the retention policy at now, deleting a prefix of sealed
@@ -297,6 +331,8 @@ func (l *Log) Trim(now time.Time, policy retention.Policy) (retention.TrimResult
 	if policy.MaxAge <= 0 && policy.MaxBytes <= 0 {
 		return retention.TrimResult{}, nil
 	}
+	l.scanMu.Lock()
+	defer l.scanMu.Unlock()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed {
@@ -396,6 +432,8 @@ func (l *Log) Truncate(to offset.Offset) error {
 	if !to.Valid() {
 		return offset.ErrInvalid
 	}
+	l.scanMu.Lock()
+	defer l.scanMu.Unlock()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed {
@@ -460,6 +498,8 @@ func (l *Log) Truncate(to offset.Offset) error {
 
 // Close flushes and releases all segment resources.
 func (l *Log) Close() error {
+	l.scanMu.Lock()
+	defer l.scanMu.Unlock()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed {

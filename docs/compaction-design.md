@@ -160,9 +160,10 @@ For each rewritten segment `S` at base `B` with LEO `L` (its original
 2. Build the sparse index entries from the new layout (`relativeOffset =
    batchBase - B`, `relativePosition`), write the index to a temp file
    (`.tmp-compact-*.index`), fsync it.
-3. Take the **log writer lock** and re-verify `S` is still present and sealed.
-   The lock guarantees no reader is mid-`ScanBatches` on `S`, so its handle can
-   be closed (Windows cannot rename over an open file).
+3. Take `scanMu` and then the **log writer lock**, and re-verify `S` is still
+   present and sealed. `scanMu` is what guarantees no reader is mid-scan on `S`
+   — the writer lock no longer does, because a read holds it only to snapshot —
+   so the handle can be closed (Windows cannot rename over an open file).
 4. `S.Close()` — this re-syncs the *old* index, which is fine because it happens
    before the new files are renamed over it.
 5. `os.Rename(tempData, B.log)`; `os.Rename(tempIndex, B.index)`;
