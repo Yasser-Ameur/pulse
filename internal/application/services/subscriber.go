@@ -120,8 +120,11 @@ func (s *Subscriber) startPosition(ctx context.Context, sub consumer.Subscriptio
 	return 0, nil
 }
 
-// Ack advances a consumer's stored cursor to o. Acknowledgments are
-// monotonic: a regression is ignored and the existing cursor is returned.
+// Ack advances a consumer's stored cursor to o, where o is the NEXT offset the
+// consumer wants to receive — one past the last record it processed, not that
+// record's own offset. startPosition reads from the cursor inclusively, so
+// acking the last processed offset redelivers it on resume. Acknowledgments
+// are monotonic: a regression is ignored and the existing cursor is returned.
 func (s *Subscriber) Ack(ctx context.Context, c consumer.ID, t topic.Name, id partition.ID, o offset.Offset) (offset.Offset, error) {
 	if err := c.Validate(); err != nil {
 		return offset.Invalid, err

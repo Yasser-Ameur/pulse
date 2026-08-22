@@ -77,6 +77,27 @@ consumer's stored cursor (0 if never set). `start_offset` always overrides the
 cursor. This gives deterministic replay (`follow=false` + explicit offset) and
 resumable consumption (`consumer` + `follow=true`) from the same RPC.
 
+**A stored cursor is the NEXT offset to consume, not the last one consumed.**
+The read position is inclusive: a cursor of `N` delivers the record at `N`
+first. A consumer that has processed through offset `N` therefore calls
+`Ack(N+1)`, and `Ack(N)` redelivers record `N` on the next resume.
+
+The same rule applies to `Ack` itself: the `offset` field of `AckRequest` is
+the next offset to consume. `AckResponse.cursor` echoes the stored cursor after
+the call. Acks are monotonic — an offset at or below the stored cursor is
+ignored and the existing cursor is returned, so a late or duplicated `Ack`
+cannot rewind a consumer.
+
+> Note: `AckRequest.Offset` in the generated
+> `pkg/api/pulse/v1/pulsepb/pubsub.pb.go` still carries the old comment, "the
+> last offset successfully processed". The `.proto` source it is generated from
+> has been corrected; the generated file will pick the correction up the next
+> time `pulsepb` is regenerated. This section and `Subscriber.Ack` describe the
+> implemented behaviour.
+
+Delivery, durability, and duplicate semantics are stated in
+[Guarantees.md](Guarantees.md).
+
 ## 4. Errors
 
 Domain errors are mapped to canonical gRPC codes by the adapter:

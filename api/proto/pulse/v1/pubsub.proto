@@ -57,8 +57,11 @@ message AckRequest {
   string topic = 2;
   int32 partition = 3;
 
-  // offset is the last offset successfully processed by the consumer. The
-  // broker advances the consumer's stored cursor to this offset.
+  // offset is the NEXT offset the consumer wants to receive - one past the
+  // last record it processed, not that record's own offset. The broker
+  // advances the consumer's stored cursor to this offset, and a subscription
+  // resumes from the cursor inclusively, so sending the last processed offset
+  // redelivers it.
   int64 offset = 4;
 }
 

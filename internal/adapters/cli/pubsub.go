@@ -146,7 +146,7 @@ func newAckCmd(opts *Options) *cobra.Command {
 	}
 	cmd.Flags().IntVar(&partitionID, "partition", 0, "partition")
 	cmd.Flags().StringVar(&consumerID, "consumer", "", "consumer id")
-	cmd.Flags().Int64Var(&at, "offset", 0, "offset to acknowledge")
+	cmd.Flags().Int64Var(&at, "offset", 0, "next offset to consume (one past the last processed)")
 	_ = cmd.MarkFlagRequired("consumer")
 	_ = cmd.MarkFlagRequired("offset")
 	return cmd
