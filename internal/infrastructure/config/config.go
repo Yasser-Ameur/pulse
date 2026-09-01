@@ -6,12 +6,22 @@
 // transport bounds come from docs/Protocol.md §6, the storage tunables
 // (segment size, index interval, sync mode) from docs/Storage.md §5, and the
 // engine defaults from the storage engine itself.
+//
+// Every YAML key has a matching PULSE_<UPPER_SNAKE> environment override,
+// named after its YAML path with dots replaced by underscores (e.g.
+// storage.sync-interval becomes PULSE_STORAGE_SYNC_INTERVAL). The original
+// four override names (PULSE_LISTEN_ADDR, PULSE_DATA_DIR, PULSE_LOG_LEVEL,
+// PULSE_SYNC_MODE) already matched or predate this rule and are kept for
+// compatibility; PULSE_SYNC_MODE is still accepted alongside the
+// rule-conforming PULSE_STORAGE_SYNC_MODE.
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	yaml "go.yaml.in/yaml/v3"
@@ -24,6 +34,23 @@ const (
 	DefaultSegmentMaxBytes = 512 << 20 // 512 MiB (Storage.md §5)
 	DefaultIndexInterval   = 4096      // 4 KiB (Storage.md §4)
 	DefaultDataDir         = "data"
+	// DefaultMonitorAddr is the address the monitor HTTP listener (health,
+	// readiness, varz, metrics) binds to. An empty monitor-addr disables it.
+	DefaultMonitorAddr = "127.0.0.1:9091"
+)
+
+// Storage sync modes.
+const (
+	SyncModeEveryWrite = "every-write"
+	SyncModeInterval   = "interval"
+)
+
+// Log levels accepted by LogLevel.
+const (
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
 )
 
 // DefaultRetentionInterval is how often the retention sweeper runs (Storage.md
@@ -50,6 +77,9 @@ type Config struct {
 	Development bool `yaml:"development" json:"development"`
 	// ShutdownGrace is the graceful-stop drain timeout.
 	ShutdownGrace Duration `yaml:"shutdown-grace" json:"shutdown-grace"`
+	// MonitorAddr is the address the monitor HTTP listener (health,
+	// readiness, varz, metrics) binds to. Empty disables the listener.
+	MonitorAddr string `yaml:"monitor-addr" json:"monitor-addr"`
 	// Storage carries the data-plane tunables (Storage.md §4-5).
 	Storage Storage `yaml:"storage" json:"storage"`
 	// Subscribe bounds a single subscribe read.
@@ -86,12 +116,13 @@ func Default() Config {
 		DataDir:        DefaultDataDir,
 		MaxRecvMsgSize: DefaultMaxMsgBytes,
 		MaxSendMsgSize: DefaultMaxMsgBytes,
-		LogLevel:       "info",
+		LogLevel:       LogLevelInfo,
 		ShutdownGrace:  Duration(DefaultShutdownGrace),
+		MonitorAddr:    DefaultMonitorAddr,
 		Storage: Storage{
 			SegmentMaxBytes:    DefaultSegmentMaxBytes,
 			IndexIntervalBytes: DefaultIndexInterval,
-			SyncMode:           "every-write",
+			SyncMode:           SyncModeEveryWrite,
 			SyncInterval:       Duration(100 * time.Millisecond),
 			RetentionInterval:  Duration(DefaultRetentionInterval),
 		},
@@ -111,31 +142,118 @@ func Load(path string) (Config, error) {
 		if err != nil {
 			return Config{}, fmt.Errorf("read config %s: %w", path, err)
 		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
+		if err := dec.Decode(&cfg); err != nil {
 			return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 		}
 	}
-	cfg.applyEnv()
+	if err := cfg.applyEnv(); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
 }
 
-// applyEnv applies PULSE_* environment overrides.
-func (c *Config) applyEnv() {
-	if v := os.Getenv("PULSE_LISTEN_ADDR"); v != "" {
-		c.ListenAddr = v
+// envString applies a string environment override to dst if key is set to a
+// non-empty value.
+func envString(key string, dst *string) {
+	if v := os.Getenv(key); v != "" {
+		*dst = v
 	}
-	if v := os.Getenv("PULSE_DATA_DIR"); v != "" {
-		c.DataDir = v
+}
+
+// envBool applies a bool environment override to dst, appending a parse error
+// naming key to errs on failure.
+func envBool(key string, dst *bool, errs *[]error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return
 	}
-	if v := os.Getenv("PULSE_LOG_LEVEL"); v != "" {
-		c.LogLevel = v
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("env %s: %w", key, err))
+		return
 	}
-	if v := os.Getenv("PULSE_SYNC_MODE"); v != "" {
-		c.Storage.SyncMode = v
+	*dst = b
+}
+
+// envInt applies an int environment override to dst, appending a parse error
+// naming key to errs on failure.
+func envInt(key string, dst *int, errs *[]error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return
 	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("env %s: %w", key, err))
+		return
+	}
+	*dst = n
+}
+
+// envInt64 applies an int64 environment override to dst, appending a parse
+// error naming key to errs on failure.
+func envInt64(key string, dst *int64, errs *[]error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("env %s: %w", key, err))
+		return
+	}
+	*dst = n
+}
+
+// envDuration applies a Duration environment override to dst, appending a
+// parse error naming key to errs on failure.
+func envDuration(key string, dst *Duration, errs *[]error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("env %s: %w", key, err))
+		return
+	}
+	*dst = Duration(d)
+}
+
+// applyEnv applies PULSE_* environment overrides. Every YAML key has an
+// override named PULSE_<UPPER_SNAKE path> (dots become underscores); a
+// malformed value for a typed key is reported as an error naming the
+// variable.
+func (c *Config) applyEnv() error {
+	var errs []error
+
+	envString("PULSE_LISTEN_ADDR", &c.ListenAddr)
+	envString("PULSE_DATA_DIR", &c.DataDir)
+	envInt("PULSE_MAX_RECV_MSG_SIZE", &c.MaxRecvMsgSize, &errs)
+	envInt("PULSE_MAX_SEND_MSG_SIZE", &c.MaxSendMsgSize, &errs)
+	envString("PULSE_LOG_LEVEL", &c.LogLevel)
+	envBool("PULSE_DEVELOPMENT", &c.Development, &errs)
+	envDuration("PULSE_SHUTDOWN_GRACE", &c.ShutdownGrace, &errs)
+	envString("PULSE_MONITOR_ADDR", &c.MonitorAddr)
+
+	envInt64("PULSE_STORAGE_SEGMENT_MAX_BYTES", &c.Storage.SegmentMaxBytes, &errs)
+	envInt64("PULSE_STORAGE_INDEX_INTERVAL_BYTES", &c.Storage.IndexIntervalBytes, &errs)
+	// PULSE_SYNC_MODE is the legacy override name; PULSE_STORAGE_SYNC_MODE is
+	// the rule-conforming name and wins when both are set.
+	envString("PULSE_SYNC_MODE", &c.Storage.SyncMode)
+	envString("PULSE_STORAGE_SYNC_MODE", &c.Storage.SyncMode)
+	envDuration("PULSE_STORAGE_SYNC_INTERVAL", &c.Storage.SyncInterval, &errs)
+	envDuration("PULSE_STORAGE_RETENTION_INTERVAL", &c.Storage.RetentionInterval, &errs)
+
+	envInt("PULSE_SUBSCRIBE_READ_LIMIT", &c.Subscribe.ReadLimit, &errs)
+	envInt("PULSE_SUBSCRIBE_READ_MAX_BYTES", &c.Subscribe.ReadMaxBytes, &errs)
+
+	return errors.Join(errs...)
 }
 
 // Validate checks the configuration against its limits.
@@ -154,7 +272,7 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("max-send-msg-size %d out of range", c.MaxSendMsgSize))
 	}
 	switch c.LogLevel {
-	case "debug", "info", "warn", "error":
+	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
 	default:
 		errs = append(errs, fmt.Errorf("log-level %q must be debug|info|warn|error", c.LogLevel))
 	}
@@ -168,7 +286,7 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("storage.index-interval-bytes must be positive"))
 	}
 	switch c.Storage.SyncMode {
-	case "every-write", "interval":
+	case SyncModeEveryWrite, SyncModeInterval:
 	default:
 		errs = append(errs, fmt.Errorf("storage.sync-mode %q must be every-write|interval", c.Storage.SyncMode))
 	}

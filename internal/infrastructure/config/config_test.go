@@ -31,6 +31,17 @@ func clearEnv(t *testing.T) {
 		"PULSE_DATA_DIR",
 		"PULSE_LOG_LEVEL",
 		"PULSE_SYNC_MODE",
+		"PULSE_MAX_RECV_MSG_SIZE",
+		"PULSE_MAX_SEND_MSG_SIZE",
+		"PULSE_DEVELOPMENT",
+		"PULSE_SHUTDOWN_GRACE",
+		"PULSE_STORAGE_SEGMENT_MAX_BYTES",
+		"PULSE_STORAGE_INDEX_INTERVAL_BYTES",
+		"PULSE_STORAGE_SYNC_MODE",
+		"PULSE_STORAGE_SYNC_INTERVAL",
+		"PULSE_STORAGE_RETENTION_INTERVAL",
+		"PULSE_SUBSCRIBE_READ_LIMIT",
+		"PULSE_SUBSCRIBE_READ_MAX_BYTES",
 	} {
 		t.Setenv(k, "")
 	}
@@ -155,6 +166,34 @@ subscribe:
 	}
 }
 
+// TestLoadStrictRejectsUnknownTopLevelKey pins that Load fails closed on a
+// typo'd or unknown key rather than silently ignoring it.
+func TestLoadStrictRejectsUnknownTopLevelKey(t *testing.T) {
+	clearEnv(t)
+	path := writeConfig(t, "listen-addr: \"0.0.0.0:9090\"\nnope: true\n")
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want an unknown-field error")
+	}
+	if !strings.Contains(err.Error(), "parse config") {
+		t.Errorf("Load() error = %v, want it to mention \"parse config\"", err)
+	}
+}
+
+// TestLoadStrictRejectsUnknownNestedKey pins that strict decoding recurses
+// into the nested blocks, not just the top level.
+func TestLoadStrictRejectsUnknownNestedKey(t *testing.T) {
+	clearEnv(t)
+	path := writeConfig(t, "storage:\n  nope: true\n")
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want an unknown-field error")
+	}
+	if !strings.Contains(err.Error(), "parse config") {
+		t.Errorf("Load() error = %v, want it to mention \"parse config\"", err)
+	}
+}
+
 func TestLoadMissingFile(t *testing.T) {
 	clearEnv(t)
 	path := filepath.Join(t.TempDir(), "does-not-exist.yaml")
@@ -233,6 +272,142 @@ func TestLoadEnvOverridesDefaults(t *testing.T) {
 	}
 	if cfg.Storage.SyncMode != "interval" {
 		t.Errorf("SyncMode = %q, want %q", cfg.Storage.SyncMode, "interval")
+	}
+}
+
+// TestLoadEnvOverridesEveryKey pins that every YAML key has a working
+// PULSE_<UPPER_SNAKE> environment override, one group per key.
+func TestLoadEnvOverridesEveryKey(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   string
+		value string
+		check func(t *testing.T, cfg Config)
+	}{
+		{"listen-addr", "PULSE_LISTEN_ADDR", "10.0.0.1:1234", func(t *testing.T, cfg Config) {
+			if cfg.ListenAddr != "10.0.0.1:1234" {
+				t.Errorf("ListenAddr = %q", cfg.ListenAddr)
+			}
+		}},
+		{"data-dir", "PULSE_DATA_DIR", "/env/data", func(t *testing.T, cfg Config) {
+			if cfg.DataDir != "/env/data" {
+				t.Errorf("DataDir = %q", cfg.DataDir)
+			}
+		}},
+		{"max-recv-msg-size", "PULSE_MAX_RECV_MSG_SIZE", "1048576", func(t *testing.T, cfg Config) {
+			if cfg.MaxRecvMsgSize != 1<<20 {
+				t.Errorf("MaxRecvMsgSize = %d", cfg.MaxRecvMsgSize)
+			}
+		}},
+		{"max-send-msg-size", "PULSE_MAX_SEND_MSG_SIZE", "1048576", func(t *testing.T, cfg Config) {
+			if cfg.MaxSendMsgSize != 1<<20 {
+				t.Errorf("MaxSendMsgSize = %d", cfg.MaxSendMsgSize)
+			}
+		}},
+		{"log-level", "PULSE_LOG_LEVEL", "warn", func(t *testing.T, cfg Config) {
+			if cfg.LogLevel != "warn" {
+				t.Errorf("LogLevel = %q", cfg.LogLevel)
+			}
+		}},
+		{"development", "PULSE_DEVELOPMENT", "true", func(t *testing.T, cfg Config) {
+			if !cfg.Development {
+				t.Error("Development = false, want true")
+			}
+		}},
+		{"shutdown-grace", "PULSE_SHUTDOWN_GRACE", "5s", func(t *testing.T, cfg Config) {
+			if cfg.ShutdownGrace.Duration() != 5*time.Second {
+				t.Errorf("ShutdownGrace = %v", cfg.ShutdownGrace.Duration())
+			}
+		}},
+		{"storage.segment-max-bytes", "PULSE_STORAGE_SEGMENT_MAX_BYTES", "2048", func(t *testing.T, cfg Config) {
+			if cfg.Storage.SegmentMaxBytes != 2048 {
+				t.Errorf("SegmentMaxBytes = %d", cfg.Storage.SegmentMaxBytes)
+			}
+		}},
+		{"storage.index-interval-bytes", "PULSE_STORAGE_INDEX_INTERVAL_BYTES", "256", func(t *testing.T, cfg Config) {
+			if cfg.Storage.IndexIntervalBytes != 256 {
+				t.Errorf("IndexIntervalBytes = %d", cfg.Storage.IndexIntervalBytes)
+			}
+		}},
+		{"storage.sync-mode via rule-conforming name", "PULSE_STORAGE_SYNC_MODE", "interval", func(t *testing.T, cfg Config) {
+			if cfg.Storage.SyncMode != "interval" {
+				t.Errorf("SyncMode = %q", cfg.Storage.SyncMode)
+			}
+		}},
+		{"storage.sync-interval", "PULSE_STORAGE_SYNC_INTERVAL", "250ms", func(t *testing.T, cfg Config) {
+			if cfg.Storage.SyncInterval.Duration() != 250*time.Millisecond {
+				t.Errorf("SyncInterval = %v", cfg.Storage.SyncInterval.Duration())
+			}
+		}},
+		{"storage.retention-interval", "PULSE_STORAGE_RETENTION_INTERVAL", "1m", func(t *testing.T, cfg Config) {
+			if cfg.Storage.RetentionInterval.Duration() != time.Minute {
+				t.Errorf("RetentionInterval = %v", cfg.Storage.RetentionInterval.Duration())
+			}
+		}},
+		{"subscribe.read-limit", "PULSE_SUBSCRIBE_READ_LIMIT", "10", func(t *testing.T, cfg Config) {
+			if cfg.Subscribe.ReadLimit != 10 {
+				t.Errorf("ReadLimit = %d", cfg.Subscribe.ReadLimit)
+			}
+		}},
+		{"subscribe.read-max-bytes", "PULSE_SUBSCRIBE_READ_MAX_BYTES", "2048", func(t *testing.T, cfg Config) {
+			if cfg.Subscribe.ReadMaxBytes != 2048 {
+				t.Errorf("ReadMaxBytes = %d", cfg.Subscribe.ReadMaxBytes)
+			}
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv(tt.env, tt.value)
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			tt.check(t, cfg)
+		})
+	}
+}
+
+// TestLoadLegacySyncModeStillAccepted pins that the pre-existing
+// PULSE_SYNC_MODE override name keeps working.
+func TestLoadLegacySyncModeStillAccepted(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("PULSE_SYNC_MODE", "interval")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Storage.SyncMode != "interval" {
+		t.Errorf("SyncMode = %q, want %q", cfg.Storage.SyncMode, "interval")
+	}
+}
+
+// TestLoadMalformedEnvValue pins that a malformed typed env override fails
+// Load and names the offending variable.
+func TestLoadMalformedEnvValue(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		val  string
+	}{
+		{"int", "PULSE_MAX_RECV_MSG_SIZE", "not-an-int"},
+		{"int64", "PULSE_STORAGE_SEGMENT_MAX_BYTES", "not-an-int"},
+		{"bool", "PULSE_DEVELOPMENT", "not-a-bool"},
+		{"duration", "PULSE_SHUTDOWN_GRACE", "not-a-duration"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv(tt.env, tt.val)
+			_, err := Load("")
+			if err == nil {
+				t.Fatalf("Load() error = nil, want an error for %s=%s", tt.env, tt.val)
+			}
+			if !strings.Contains(err.Error(), tt.env) {
+				t.Errorf("Load() error = %v, want it to name %s", err, tt.env)
+			}
+		})
 	}
 }
 
