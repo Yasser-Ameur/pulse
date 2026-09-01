@@ -149,17 +149,17 @@ in every other state, with `status` naming it.
   "uptime_seconds": 128.4,
   "started_at": "2026-09-02T10:00:00Z",
   "topics": [
-    {"name": "orders", "partitions": [{"id": 0, "start_offset": 0, "end_offset": 42}]}
+    {"name": "orders", "partitions": [{"id": 0, "end_offset": 42}]}
   ],
   "go_version": "go1.26",
   "num_goroutine": 12
 }
 ```
 
-`partitions[].start_offset` is always `0`: the storage `Log` port exposes
-only the log end (`NextOffset`), not a trimmed low-water mark, so the true
-start of a retention-trimmed partition cannot be reported without adding
-that accessor to the log engine (`internal/application/services/monitor_view.go`).
+`partitions[].end_offset` is the next offset the partition will assign. There
+is no start offset: the storage `Log` port exposes only the log end
+(`NextOffset`), not a trimmed low-water mark
+(`internal/application/services/monitor_view.go`).
 
 `GET /metrics`: Prometheus exposition format, served by
 `promhttp.HandlerFor` over the same registry the broker's own counters are
