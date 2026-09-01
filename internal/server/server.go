@@ -164,10 +164,13 @@ func Run(cfg config.Config) error {
 	// GracefulStop only waits for in-flight unary calls, not the grace window.
 	app.Drain()
 	transport.GracefulStop(shutdownCtx)
+	// The monitor stays up through the storage flush so probes see the
+	// draining state instead of a refused connection; it is the last to go.
+	err = app.Shutdown(shutdownCtx)
 	if monSrv != nil {
 		_ = monSrv.Shutdown(shutdownCtx)
 	}
-	if err := app.Shutdown(shutdownCtx); err != nil {
+	if err != nil {
 		logger.Error("shutdown incomplete", ports.Field{Key: "error", Value: err.Error()})
 		return err
 	}
