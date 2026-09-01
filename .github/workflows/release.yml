@@ -100,12 +100,21 @@ jobs:
         run: |
           cd artifacts
           sha256sum pulse-*.tar.gz pulse-*.zip > sha256sums.txt
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             artifacts/pulse-*.tar.gz
             artifacts/pulse-*.zip
             artifacts/sha256sums.txt
+            sbom.spdx.json
 
   container:
     needs: gate
@@ -128,6 +137,8 @@ jobs:
         with:
           context: .
           push: true
+          provenance: true
+          sbom: true
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
