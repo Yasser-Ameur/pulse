@@ -60,8 +60,8 @@ starts on a configuration it could not fully resolve and validate.
 ## TLS and mTLS setup
 
 TLS is off by default (plaintext gRPC). Setting `tls.cert-file` and
-`tls.key-file` enables server-side TLS; additionally setting
-`tls.client-ca-file` requires and verifies a client certificate (mTLS). The
+`tls.key-file` enables server-side TLS; setting `tls.client-ca-file` as well
+requires and verifies a client certificate (mTLS). The
 server resolves this into a `*tls.Config` in `buildTLSConfig`
 (`internal/server/server.go`) before any listener opens, with
 `MinVersion: tls.VersionTLS12`, and passes it to the gRPC transport via

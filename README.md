@@ -138,9 +138,9 @@ See [examples/](examples/) for configs and runnable programs, and
 - [Storage.md](docs/Storage.md) — log format, indexes, recovery, retention
 - [Protocol.md](docs/Protocol.md) — gRPC contract and versioning
 - [Concurrency.md](docs/Concurrency.md) — goroutines, locks, shutdown
-- [Configuration.md](docs/Configuration.md): every config key, TLS setup, monitor endpoints
-- [Operations.md](docs/Operations.md): production shutdown, probes, metrics, limits, readiness checklist
-- [Client.md](docs/Client.md): the public Go client and CLI TLS flags
+- [Configuration.md](docs/Configuration.md) — every config key, TLS setup, monitor endpoints
+- [Operations.md](docs/Operations.md) — production shutdown, probes, metrics, limits, readiness checklist
+- [Client.md](docs/Client.md) — the public Go client and CLI TLS flags
 - [Roadmap.md](docs/Roadmap.md) — phase plan and extension points
 
 ## Development
