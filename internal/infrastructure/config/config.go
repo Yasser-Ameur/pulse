@@ -17,11 +17,13 @@
 package config
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	yaml "go.yaml.in/yaml/v3"
@@ -87,6 +89,9 @@ type Config struct {
 	// TLS configures the gRPC server's transport credentials. A zero value
 	// serves plaintext.
 	TLS TLS `yaml:"tls" json:"tls"`
+	// Auth configures token-based client authentication. An empty resolved
+	// token set disables authentication.
+	Auth AuthConfig `yaml:"auth" json:"auth"`
 }
 
 // Storage is the data-plane configuration.
@@ -123,6 +128,19 @@ type TLS struct {
 	// ClientCAFile is a PEM-encoded CA bundle; when set, client certificates
 	// are required and verified against it (mTLS).
 	ClientCAFile string `yaml:"client-ca-file" json:"client-ca-file"`
+}
+
+// AuthConfig configures token-based client authentication for the gRPC
+// transport. The effective token set is Tokens merged with the lines of
+// TokenFile (if set); when that merged set is empty, authentication is
+// disabled.
+type AuthConfig struct {
+	// Tokens are bearer tokens accepted directly from configuration.
+	Tokens []string `yaml:"tokens" json:"tokens"`
+	// TokenFile is a path to a file with one bearer token per line; blank
+	// lines and lines starting with "#" are ignored. Its tokens are merged
+	// with Tokens.
+	TokenFile string `yaml:"token-file" json:"token-file"`
 }
 
 // Default returns the built-in configuration defaults.
@@ -167,10 +185,38 @@ func Load(path string) (Config, error) {
 	if err := cfg.applyEnv(); err != nil {
 		return Config{}, err
 	}
+	if err := cfg.loadAuthTokenFile(); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// loadAuthTokenFile reads Auth.TokenFile (if set), one token per line with
+// blank lines and "#"-prefixed lines ignored, and merges them into
+// Auth.Tokens. An unreadable file is an error.
+func (c *Config) loadAuthTokenFile() error {
+	if c.Auth.TokenFile == "" {
+		return nil
+	}
+	data, err := os.ReadFile(c.Auth.TokenFile)
+	if err != nil {
+		return fmt.Errorf("read auth token-file %s: %w", c.Auth.TokenFile, err)
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		c.Auth.Tokens = append(c.Auth.Tokens, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read auth token-file %s: %w", c.Auth.TokenFile, err)
+	}
+	return nil
 }
 
 // envString applies a string environment override to dst if key is set to a
@@ -273,6 +319,11 @@ func (c *Config) applyEnv() error {
 	envString("PULSE_TLS_KEY_FILE", &c.TLS.KeyFile)
 	envString("PULSE_TLS_CLIENT_CA_FILE", &c.TLS.ClientCAFile)
 
+	if v := os.Getenv("PULSE_AUTH_TOKENS"); v != "" {
+		c.Auth.Tokens = append(c.Auth.Tokens, strings.Split(v, ",")...)
+	}
+	envString("PULSE_AUTH_TOKEN_FILE", &c.Auth.TokenFile)
+
 	return errors.Join(errs...)
 }
 
@@ -327,6 +378,12 @@ func (c Config) Validate() error {
 	}
 	if c.TLS.ClientCAFile != "" && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
 		errs = append(errs, errors.New("tls.client-ca-file requires tls.cert-file and tls.key-file"))
+	}
+	for _, tok := range c.Auth.Tokens {
+		if tok == "" {
+			errs = append(errs, errors.New("auth.tokens must not contain empty entries"))
+			break
+		}
 	}
 	return errors.Join(errs...)
 }

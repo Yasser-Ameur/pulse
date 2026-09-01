@@ -114,12 +114,17 @@ func Run(cfg config.Config) error {
 		go func() { _ = monSrv.Serve(monLn) }()
 	}
 
+	if len(cfg.Auth.Tokens) == 0 {
+		logger.Warn("authentication disabled; any client can publish and consume")
+	}
+
 	transport := grpctransport.NewServer(app, clock, grpctransport.Options{
 		MaxRecvMsgSize: cfg.MaxRecvMsgSize,
 		MaxSendMsgSize: cfg.MaxSendMsgSize,
 		GraceTimeout:   cfg.ShutdownGrace.Duration(),
 		Logger:         logger,
 		TLS:            tlsConfig,
+		Tokens:         cfg.Auth.Tokens,
 	})
 	transport.SetServing(true)
 

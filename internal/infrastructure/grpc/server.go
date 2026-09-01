@@ -6,9 +6,11 @@ package grpc
 
 import (
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"net"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	grpcadapters "github.com/pulse-stream/pulse/internal/adapters/grpc"
@@ -21,6 +23,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 )
@@ -46,6 +49,9 @@ type Options struct {
 	// TLS configures the server's transport credentials. Nil serves
 	// plaintext.
 	TLS *tls.Config
+	// Tokens are the accepted bearer tokens for client authentication.
+	// Empty/nil means authentication is off.
+	Tokens []string
 }
 
 // DefaultOptions applies the protocol transport defaults.
@@ -79,11 +85,18 @@ func NewServer(app *services.Broker, clock ports.Clock, opts Options) *Server {
 		opts.GraceTimeout = 10 * time.Second
 	}
 
+	unaryInterceptors := []grpc.UnaryServerInterceptor{unaryInterceptor(opts.Logger)}
+	streamInterceptors := []grpc.StreamServerInterceptor{streamInterceptor(opts.Logger)}
+	if len(opts.Tokens) > 0 {
+		unaryInterceptors = append(unaryInterceptors, unaryAuthInterceptor(opts.Tokens))
+		streamInterceptors = append(streamInterceptors, streamAuthInterceptor(opts.Tokens))
+	}
+
 	serverOpts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(opts.MaxRecvMsgSize),
 		grpc.MaxSendMsgSize(opts.MaxSendMsgSize),
-		grpc.ChainUnaryInterceptor(unaryInterceptor(opts.Logger)),
-		grpc.ChainStreamInterceptor(streamInterceptor(opts.Logger)),
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle: 5 * time.Minute,
 			Time:              2 * time.Minute,
@@ -126,6 +139,78 @@ func unaryInterceptor(logger ports.Logger) grpc.UnaryServerInterceptor {
 func streamInterceptor(logger ports.Logger) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		defer finishRPC(logger, info.FullMethod, time.Now(), &err)
+		return handler(srv, ss)
+	}
+}
+
+// authExemptPrefixes are full-method prefixes that skip token authentication:
+// the health and reflection services, so a probe or introspection tool never
+// needs a token.
+var authExemptPrefixes = []string{"/grpc.health.v1.Health/", "/grpc.reflection."}
+
+// errMissingOrInvalidToken is returned for a missing, malformed, or
+// unrecognized bearer token.
+var errMissingOrInvalidToken = status.Error(codes.Unauthenticated, "missing or invalid token")
+
+// authExempt reports whether fullMethod skips token authentication.
+func authExempt(fullMethod string) bool {
+	for _, prefix := range authExemptPrefixes {
+		if strings.HasPrefix(fullMethod, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// authenticate extracts the "authorization" metadata key from ctx and checks
+// it against tokens as "Bearer <token>", comparing in constant time.
+func authenticate(ctx context.Context, tokens []string) error {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return errMissingOrInvalidToken
+	}
+	values := md.Get("authorization")
+	if len(values) == 0 {
+		return errMissingOrInvalidToken
+	}
+	const prefix = "Bearer "
+	v := values[0]
+	if !strings.HasPrefix(v, prefix) {
+		return errMissingOrInvalidToken
+	}
+	candidate := strings.TrimPrefix(v, prefix)
+	for _, tok := range tokens {
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(tok)) == 1 {
+			return nil
+		}
+	}
+	return errMissingOrInvalidToken
+}
+
+// unaryAuthInterceptor rejects unary calls without a valid bearer token in
+// tokens, exempting health and reflection.
+func unaryAuthInterceptor(tokens []string) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if authExempt(info.FullMethod) {
+			return handler(ctx, req)
+		}
+		if err := authenticate(ctx, tokens); err != nil {
+			return nil, err
+		}
+		return handler(ctx, req)
+	}
+}
+
+// streamAuthInterceptor rejects stream calls without a valid bearer token in
+// tokens, exempting health and reflection.
+func streamAuthInterceptor(tokens []string) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if authExempt(info.FullMethod) {
+			return handler(srv, ss)
+		}
+		if err := authenticate(ss.Context(), tokens); err != nil {
+			return err
+		}
 		return handler(srv, ss)
 	}
 }

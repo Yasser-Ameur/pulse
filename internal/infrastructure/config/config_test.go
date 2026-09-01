@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -109,7 +110,7 @@ func TestLoadEmptyPathReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(\"\") error = %v", err)
 	}
-	if cfg != Default() {
+	if !reflect.DeepEqual(cfg, Default()) {
 		t.Errorf("Load(\"\") = %+v, want %+v", cfg, Default())
 	}
 }
@@ -252,7 +253,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 	}
 	// A failed Load returns the zero Config, not a partially resolved one.
 	cfg, _ := Load(path)
-	if cfg != (Config{}) {
+	if !reflect.DeepEqual(cfg, Config{}) {
 		t.Errorf("Load() config = %+v, want zero Config on error", cfg)
 	}
 }
@@ -859,7 +860,7 @@ func TestConfigJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("json.Unmarshal(%s) error = %v", data, err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round-tripped config = %+v, want %+v", got, want)
 	}
 	if err := got.Validate(); err != nil {
