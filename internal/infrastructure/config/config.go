@@ -84,6 +84,9 @@ type Config struct {
 	Storage Storage `yaml:"storage" json:"storage"`
 	// Subscribe bounds a single subscribe read.
 	Subscribe Subscribe `yaml:"subscribe" json:"subscribe"`
+	// TLS configures the gRPC server's transport credentials. A zero value
+	// serves plaintext.
+	TLS TLS `yaml:"tls" json:"tls"`
 }
 
 // Storage is the data-plane configuration.
@@ -107,6 +110,19 @@ type Subscribe struct {
 	ReadLimit int `yaml:"read-limit" json:"read-limit"`
 	// ReadMaxBytes caps payload bytes returned per read.
 	ReadMaxBytes int `yaml:"read-max-bytes" json:"read-max-bytes"`
+}
+
+// TLS configures the gRPC server's transport credentials. CertFile and
+// KeyFile must both be set or both empty; ClientCAFile (mTLS) requires both
+// to be set.
+type TLS struct {
+	// CertFile is the PEM-encoded server certificate path.
+	CertFile string `yaml:"cert-file" json:"cert-file"`
+	// KeyFile is the PEM-encoded server private key path.
+	KeyFile string `yaml:"key-file" json:"key-file"`
+	// ClientCAFile is a PEM-encoded CA bundle; when set, client certificates
+	// are required and verified against it (mTLS).
+	ClientCAFile string `yaml:"client-ca-file" json:"client-ca-file"`
 }
 
 // Default returns the built-in configuration defaults.
@@ -253,6 +269,10 @@ func (c *Config) applyEnv() error {
 	envInt("PULSE_SUBSCRIBE_READ_LIMIT", &c.Subscribe.ReadLimit, &errs)
 	envInt("PULSE_SUBSCRIBE_READ_MAX_BYTES", &c.Subscribe.ReadMaxBytes, &errs)
 
+	envString("PULSE_TLS_CERT_FILE", &c.TLS.CertFile)
+	envString("PULSE_TLS_KEY_FILE", &c.TLS.KeyFile)
+	envString("PULSE_TLS_CLIENT_CA_FILE", &c.TLS.ClientCAFile)
+
 	return errors.Join(errs...)
 }
 
@@ -301,6 +321,12 @@ func (c Config) Validate() error {
 	}
 	if c.Subscribe.ReadMaxBytes <= 0 {
 		errs = append(errs, errors.New("subscribe.read-max-bytes must be positive"))
+	}
+	if (c.TLS.CertFile == "") != (c.TLS.KeyFile == "") {
+		errs = append(errs, errors.New("tls.cert-file and tls.key-file must both be set or both empty"))
+	}
+	if c.TLS.ClientCAFile != "" && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
+		errs = append(errs, errors.New("tls.client-ca-file requires tls.cert-file and tls.key-file"))
 	}
 	return errors.Join(errs...)
 }

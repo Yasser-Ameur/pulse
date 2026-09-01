@@ -15,3 +15,7 @@ storage:
 subscribe:
   read-limit: 512
   read-max-bytes: 1048576
+tls:
+  cert-file: ""
+  key-file: ""
+  client-ca-file: ""

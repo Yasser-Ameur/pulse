@@ -6,6 +6,7 @@ package grpc
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"runtime/debug"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
@@ -38,6 +40,9 @@ type Options struct {
 	GraceTimeout time.Duration
 	// Logger is used for lifecycle log lines and per-RPC debug logging.
 	Logger ports.Logger
+	// TLS configures the server's transport credentials. Nil serves
+	// plaintext.
+	TLS *tls.Config
 }
 
 // DefaultOptions applies the protocol transport defaults.
@@ -85,6 +90,9 @@ func NewServer(app *services.Broker, clock ports.Clock, opts Options) *Server {
 			MinTime:             30 * time.Second,
 			PermitWithoutStream: true,
 		}),
+	}
+	if opts.TLS != nil {
+		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(opts.TLS)))
 	}
 
 	s := grpc.NewServer(serverOpts...)

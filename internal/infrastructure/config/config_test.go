@@ -43,6 +43,9 @@ func clearEnv(t *testing.T) {
 		"PULSE_STORAGE_RETENTION_INTERVAL",
 		"PULSE_SUBSCRIBE_READ_LIMIT",
 		"PULSE_SUBSCRIBE_READ_MAX_BYTES",
+		"PULSE_TLS_CERT_FILE",
+		"PULSE_TLS_KEY_FILE",
+		"PULSE_TLS_CLIENT_CA_FILE",
 	} {
 		t.Setenv(k, "")
 	}
@@ -378,6 +381,29 @@ func TestLoadEnvOverridesEveryKey(t *testing.T) {
 	}
 }
 
+// TestLoadEnvOverridesTLS pins the tls.* env overrides, set together since
+// cert-file and key-file must both be present to validate.
+func TestLoadEnvOverridesTLS(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("PULSE_TLS_CERT_FILE", "/tls/cert.pem")
+	t.Setenv("PULSE_TLS_KEY_FILE", "/tls/key.pem")
+	t.Setenv("PULSE_TLS_CLIENT_CA_FILE", "/tls/ca.pem")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.TLS.CertFile != "/tls/cert.pem" {
+		t.Errorf("TLS.CertFile = %q", cfg.TLS.CertFile)
+	}
+	if cfg.TLS.KeyFile != "/tls/key.pem" {
+		t.Errorf("TLS.KeyFile = %q", cfg.TLS.KeyFile)
+	}
+	if cfg.TLS.ClientCAFile != "/tls/ca.pem" {
+		t.Errorf("TLS.ClientCAFile = %q", cfg.TLS.ClientCAFile)
+	}
+}
+
 // TestLoadLegacySyncModeStillAccepted pins that the pre-existing
 // PULSE_SYNC_MODE override name keeps working.
 func TestLoadLegacySyncModeStillAccepted(t *testing.T) {
@@ -631,6 +657,36 @@ func TestValidate(t *testing.T) {
 			name:    "negative read max bytes",
 			mutate:  func(c *Config) { c.Subscribe.ReadMaxBytes = -1 },
 			wantErr: "subscribe.read-max-bytes must be positive",
+		},
+		{
+			name:    "tls cert without key",
+			mutate:  func(c *Config) { c.TLS.CertFile = "cert.pem" },
+			wantErr: "tls.cert-file and tls.key-file must both be set or both empty",
+		},
+		{
+			name:    "tls key without cert",
+			mutate:  func(c *Config) { c.TLS.KeyFile = "key.pem" },
+			wantErr: "tls.cert-file and tls.key-file must both be set or both empty",
+		},
+		{
+			name: "tls cert and key set",
+			mutate: func(c *Config) {
+				c.TLS.CertFile = "cert.pem"
+				c.TLS.KeyFile = "key.pem"
+			},
+		},
+		{
+			name:    "tls client-ca without cert and key",
+			mutate:  func(c *Config) { c.TLS.ClientCAFile = "ca.pem" },
+			wantErr: "tls.client-ca-file requires tls.cert-file and tls.key-file",
+		},
+		{
+			name: "tls client-ca with cert and key",
+			mutate: func(c *Config) {
+				c.TLS.CertFile = "cert.pem"
+				c.TLS.KeyFile = "key.pem"
+				c.TLS.ClientCAFile = "ca.pem"
+			},
 		},
 	}
 

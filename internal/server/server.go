@@ -8,6 +8,8 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -101,11 +103,18 @@ func Run(cfg config.Config) error {
 		go func() { _ = monSrv.Serve(monLn) }()
 	}
 
+	tlsConfig, err := buildTLSConfig(cfg.TLS)
+	if err != nil {
+		_ = app.Shutdown(context.Background())
+		return err
+	}
+
 	transport := grpctransport.NewServer(app, clock, grpctransport.Options{
 		MaxRecvMsgSize: cfg.MaxRecvMsgSize,
 		MaxSendMsgSize: cfg.MaxSendMsgSize,
 		GraceTimeout:   cfg.ShutdownGrace.Duration(),
 		Logger:         logger,
+		TLS:            tlsConfig,
 	})
 	transport.SetServing(true)
 
@@ -150,4 +159,33 @@ func Run(cfg config.Config) error {
 		return err
 	}
 	return nil
+}
+
+// buildTLSConfig builds the gRPC server's tls.Config from the resolved TLS
+// settings. It returns nil when TLS is not configured (plaintext).
+func buildTLSConfig(cfg config.TLS) (*tls.Config, error) {
+	if cfg.CertFile == "" && cfg.KeyFile == "" {
+		return nil, nil
+	}
+	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load tls key pair: %w", err)
+	}
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+	if cfg.ClientCAFile != "" {
+		pem, err := os.ReadFile(cfg.ClientCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read tls client ca %s: %w", cfg.ClientCAFile, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("parse tls client ca %s: no certificates found", cfg.ClientCAFile)
+		}
+		tlsConfig.ClientCAs = pool
+		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+	return tlsConfig, nil
 }
