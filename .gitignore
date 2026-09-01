@@ -27,5 +27,6 @@ coverage.out
 
 # Benchmark harness artifacts
 /bench/bin/
+/bench/bench
 /bench/results/
 /bench/tmp/
