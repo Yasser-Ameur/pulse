@@ -123,7 +123,9 @@ func TestFollowStreamsLiveMessages(t *testing.T) {
 
 	// The subscriber must first catch up to the log end (empty here), then
 	// receive the live publish.
-	time.Sleep(200 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return inst.Broker().Stats().Subscriptions == 1
+	}, 2*time.Second, 5*time.Millisecond)
 	_, err = c.Publish(ctx, "tail", 0, client.Message{Payload: []byte("live")})
 	require.NoError(t, err)
 
@@ -212,7 +214,10 @@ func TestShutdownCancelsFollowerImmediately(t *testing.T) {
 			}
 		}
 	}()
-	time.Sleep(200 * time.Millisecond) // let the follower reach its blocking wait
+	// Let the follower reach its blocking wait.
+	require.Eventually(t, func() bool {
+		return app.Stats().Subscriptions == 1
+	}, 2*time.Second, 5*time.Millisecond)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
