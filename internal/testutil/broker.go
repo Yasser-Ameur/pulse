@@ -97,6 +97,9 @@ func Start(t *testing.T, opts Options) *Instance {
 	return inst
 }
 
+// Broker exposes the application facade for tests that drive it directly.
+func (i *Instance) Broker() *services.Broker { return i.app }
+
 // Stop drains the transport and shuts down the broker, closing every storage
 // handle (including writing each partition's recovery snapshot). Safe to call
 // more than once.

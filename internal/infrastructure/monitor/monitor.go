@@ -53,10 +53,12 @@ type varzResponse struct {
 func New(b *services.Broker, version string, startedAt time.Time, reg prometheus.Gatherer) http.Handler {
 	mux := http.NewServeMux()
 
-	health := func(w http.ResponseWriter, _ *http.Request) {
-		state := b.State()
+	// /healthz is liveness: the process is alive until the broker reaches
+	// Stopped. /readyz is readiness: only a Running broker accepts work, so a
+	// draining broker answers 503 here while still answering 200 on /healthz.
+	status := func(w http.ResponseWriter, ok bool, state broker.State) {
 		w.Header().Set("Content-Type", "application/json")
-		if state == broker.StateRunning {
+		if ok {
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(statusResponse{Status: "ok"})
 			return
@@ -64,8 +66,14 @@ func New(b *services.Broker, version string, startedAt time.Time, reg prometheus
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(statusResponse{Status: state.String()})
 	}
-	mux.HandleFunc("/healthz", health)
-	mux.HandleFunc("/readyz", health)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		state := b.State()
+		status(w, state != broker.StateStopped, state)
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		state := b.State()
+		status(w, state == broker.StateRunning, state)
+	})
 
 	mux.HandleFunc("/varz", func(w http.ResponseWriter, _ *http.Request) {
 		info := b.BrokerInfo()
