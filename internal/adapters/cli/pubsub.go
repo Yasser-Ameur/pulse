@@ -35,6 +35,18 @@ func newPublishCmd(opts *Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if key != "" && !cmd.Flags().Changed("partition") {
+				topics, err := c.ListTopics(ctx)
+				if err != nil {
+					return err
+				}
+				for _, t := range topics {
+					if t.Name == name.String() {
+						partitionID = int(client.PartitionForKey(key, t.Config.Partitions))
+						break
+					}
+				}
+			}
 			body := payload
 			if payload == "" && !isStdinEmpty() {
 				data, err := io.ReadAll(os.Stdin)
@@ -55,7 +67,7 @@ func newPublishCmd(opts *Options) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().IntVar(&partitionID, "partition", 0, "target partition")
+	cmd.Flags().IntVar(&partitionID, "partition", 0, "target partition (default: routed from --key via PartitionForKey, or 0 if --key is also unset)")
 	cmd.Flags().StringVarP(&key, "key", "k", "", "message key")
 	cmd.Flags().StringVar(&contentType, "content-type", "", "message content type")
 	cmd.Flags().StringVarP(&payload, "message", "m", "", "message payload (or stdin)")
