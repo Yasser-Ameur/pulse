@@ -38,6 +38,7 @@ func TestMapError(t *testing.T) {
 		{name: "invalid partition count", in: topic.ErrInvalidPartitionCount, want: codes.InvalidArgument},
 		{name: "reserved topic name", in: topic.ErrReservedName, want: codes.InvalidArgument},
 		{name: "invalid message", in: message.ErrInvalidMessage, want: codes.InvalidArgument},
+		{name: "batch too large", in: message.ErrBatchTooLarge, want: codes.InvalidArgument},
 		{name: "invalid consumer name", in: consumer.ErrInvalidName, want: codes.InvalidArgument},
 		{name: "topic not found", in: topic.ErrNotFound, want: codes.NotFound},
 		{name: "partition not found", in: partition.ErrNotFound, want: codes.NotFound},

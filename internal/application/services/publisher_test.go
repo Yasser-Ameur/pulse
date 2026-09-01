@@ -79,6 +79,17 @@ func TestPublisherRejectsEmptyBatch(t *testing.T) {
 	}
 }
 
+func TestPublisherRejectsOversizedBatch(t *testing.T) {
+	p, _, tpc, _ := newTestPublisher(t)
+	msgs := make([]message.Message, message.MaxBatchRecords+1)
+	for i := range msgs {
+		msgs[i] = message.Message{Payload: []byte("x")}
+	}
+	if _, err := p.Publish(context.Background(), tpc, partition.ID(0), msgs); !errors.Is(err, message.ErrBatchTooLarge) {
+		t.Fatalf("Publish() error = %v, want ErrBatchTooLarge", err)
+	}
+}
+
 func TestPublisherValidatesMessages(t *testing.T) {
 	p, _, tpc, _ := newTestPublisher(t)
 	// Topic default max message bytes is 1 MiB; oversized payload must fail

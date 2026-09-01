@@ -34,6 +34,9 @@ const (
 	// Producers may not use it; the codec maps these keys to Message fields
 	// transparently.
 	SystemHeaderPrefix = "__pulse."
+	// MaxBatchRecords is the maximum number of messages a single publish
+	// batch may contain.
+	MaxBatchRecords = 10000
 )
 
 // Sentinel errors returned by message validation.
@@ -57,6 +60,8 @@ var (
 	ErrInvalidEventID = fmt.Errorf("%w: invalid event id", ErrInvalidMessage)
 	// ErrEmptyBatch reports an attempt to persist a batch without records.
 	ErrEmptyBatch = fmt.Errorf("%w: empty batch", ErrInvalidMessage)
+	// ErrBatchTooLarge reports a publish batch exceeding MaxBatchRecords.
+	ErrBatchTooLarge = fmt.Errorf("%w: batch too large", ErrInvalidMessage)
 )
 
 // EventID is a ULID identifying a single event. ULIDs are lexicographically

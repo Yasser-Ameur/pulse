@@ -36,6 +36,9 @@ func (p *Publisher) Publish(ctx context.Context, t topic.Topic, id partition.ID,
 	if len(msgs) == 0 {
 		return nil, message.ErrEmptyBatch
 	}
+	if len(msgs) > message.MaxBatchRecords {
+		return nil, message.ErrBatchTooLarge
+	}
 	lg, ok := p.registry.Log(t.Name, id)
 	if !ok {
 		return nil, partition.ErrNotFound
