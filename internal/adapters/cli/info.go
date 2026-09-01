@@ -11,16 +11,18 @@ func newInfoCmd(opts *Options) *cobra.Command {
 		Use:   "info",
 		Short: "Show broker identity and lifecycle state",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := connect(opts, cmd.Context())
+			ctx, cancel := unaryContext(cmd)
+			defer cancel()
+			c, err := connect(opts, ctx)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = c.Close() }()
-			b, err := c.BrokerInfo(cmd.Context())
+			b, err := c.BrokerInfo(ctx)
 			if err != nil {
 				return err
 			}
-			topics, err := c.ListTopics(cmd.Context())
+			topics, err := c.ListTopics(ctx)
 			if err != nil {
 				return err
 			}

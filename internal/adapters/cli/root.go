@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/pulse-stream/pulse/internal/infrastructure/grpc/client"
@@ -14,6 +16,10 @@ import (
 )
 
 const defaultAddr = "127.0.0.1:9090"
+
+// unaryTimeout bounds request/response commands (topics, publish, ack, info).
+// subscribe opts out so --forever can run until interrupted.
+const unaryTimeout = 30 * time.Second
 
 // Options carries the shared CLI flags.
 type Options struct {
@@ -38,15 +44,22 @@ func NewRootCmd() *cobra.Command {
 	return root
 }
 
-// Execute runs the CLI and exits on error.
+// Execute runs the CLI and exits on error. The context is canceled on
+// SIGINT/SIGTERM and carries no deadline, so `subscribe --forever` runs until
+// interrupted; unary commands apply their own bound via unaryContext.
 func Execute() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 	if err := NewRootCmd().ExecuteContext(ctx); err != nil {
-		cancel()
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-	cancel()
+}
+
+// unaryContext returns a context bounded by unaryTimeout for a one-shot,
+// request/response command. The caller must call the returned cancel func.
+func unaryContext(cmd *cobra.Command) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(cmd.Context(), unaryTimeout)
 }
 
 // connect dials the broker for the command duration.

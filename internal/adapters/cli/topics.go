@@ -27,12 +27,14 @@ func newTopicsCreateCmd(opts *Options) *cobra.Command {
 		Short: "Create a topic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := connect(opts, cmd.Context())
+			ctx, cancel := unaryContext(cmd)
+			defer cancel()
+			c, err := connect(opts, ctx)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = c.Close() }()
-			t, err := c.CreateTopic(cmd.Context(), args[0], topic.DefaultConfig(), partitions)
+			t, err := c.CreateTopic(ctx, args[0], topic.DefaultConfig(), partitions)
 			if err != nil {
 				return err
 			}
@@ -49,12 +51,14 @@ func newTopicsListCmd(opts *Options) *cobra.Command {
 		Use:   "list",
 		Short: "List topics",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := connect(opts, cmd.Context())
+			ctx, cancel := unaryContext(cmd)
+			defer cancel()
+			c, err := connect(opts, ctx)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = c.Close() }()
-			topics, err := c.ListTopics(cmd.Context())
+			topics, err := c.ListTopics(ctx)
 			if err != nil {
 				return err
 			}
@@ -72,12 +76,14 @@ func newTopicsDeleteCmd(opts *Options) *cobra.Command {
 		Short: "Delete a topic and its data",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := connect(opts, cmd.Context())
+			ctx, cancel := unaryContext(cmd)
+			defer cancel()
+			c, err := connect(opts, ctx)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = c.Close() }()
-			if err := c.DeleteTopic(cmd.Context(), args[0]); err != nil {
+			if err := c.DeleteTopic(ctx, args[0]); err != nil {
 				return err
 			}
 			fmt.Printf("deleted topic %s\n", args[0])

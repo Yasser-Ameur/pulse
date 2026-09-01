@@ -27,7 +27,9 @@ func newPublishCmd(opts *Options) *cobra.Command {
 		Short: "Publish messages to a topic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := connect(opts, cmd.Context())
+			ctx, cancel := unaryContext(cmd)
+			defer cancel()
+			c, err := connect(opts, ctx)
 			if err != nil {
 				return err
 			}
@@ -44,7 +46,7 @@ func newPublishCmd(opts *Options) *cobra.Command {
 				}
 				body = string(data)
 			}
-			offsets, err := c.Publish(cmd.Context(), name, partition.ID(partitionID), []message.Message{{
+			offsets, err := c.Publish(ctx, name, partition.ID(partitionID), []message.Message{{
 				Key:         key,
 				Payload:     []byte(body),
 				ContentType: contentType,
@@ -127,7 +129,9 @@ func newAckCmd(opts *Options) *cobra.Command {
 		Short: "Advance a consumer cursor",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := connect(opts, cmd.Context())
+			ctx, cancel := unaryContext(cmd)
+			defer cancel()
+			c, err := connect(opts, ctx)
 			if err != nil {
 				return err
 			}
@@ -136,7 +140,7 @@ func newAckCmd(opts *Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cursor, err := c.Ack(cmd.Context(), consumer.ID(consumerID), name, partition.ID(partitionID), offset.Offset(at))
+			cursor, err := c.Ack(ctx, consumer.ID(consumerID), name, partition.ID(partitionID), offset.Offset(at))
 			if err != nil {
 				return err
 			}
