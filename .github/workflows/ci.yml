@@ -7,11 +7,12 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       GOPROXY: https://proxy.golang.org,direct
       CGO: 1
@@ -33,13 +34,22 @@ jobs:
         run: make test
       - name: Tests with race detector
         run: make test-race
+      - name: Bench harness
+        run: make bench-check
       - name: Build binaries
         run: make build
+      - name: Vulnerability scan
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: "1.26.x"
 
   container:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3

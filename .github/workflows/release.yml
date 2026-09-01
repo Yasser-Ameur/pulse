@@ -1,0 +1,133 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GOPROXY: https://proxy.golang.org,direct
+      CGO: 1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - name: Check formatting
+        run: make fmt-check
+      - name: Vet
+        run: make vet
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+      - name: Tests with race detector
+        run: make test-race
+
+  build:
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION=$(git describe --tags --always)
+          LDFLAGS="-s -w -X github.com/pulse-stream/pulse/internal/server.Version=$VERSION"
+          EXT=""
+          if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+          mkdir -p dist
+          go build -ldflags="$LDFLAGS" -o "dist/pulse-server$EXT" ./cmd/pulse-server
+          go build -ldflags="$LDFLAGS" -o "dist/pulse-cli$EXT" ./cmd/pulse-cli
+      - name: Package
+        run: |
+          NAME="pulse-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            (cd dist && zip -j "../$NAME.zip" pulse-server.exe pulse-cli.exe)
+          else
+            tar -C dist -czf "$NAME.tar.gz" pulse-server pulse-cli
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pulse-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: pulse-*.tar.gz pulse-*.zip
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum pulse-*.tar.gz pulse-*.zip > sha256sums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/pulse-*.tar.gz
+            artifacts/pulse-*.zip
+            artifacts/sha256sums.txt
+
+  container:
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          tags: |
+            ghcr.io/yasser-ameur/pulse:${{ steps.version.outputs.version }}
+            ghcr.io/yasser-ameur/pulse:latest
