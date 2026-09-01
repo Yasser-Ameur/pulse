@@ -322,7 +322,9 @@ func (b *Broker) partitionLog(t *testing.T, factory *fakeFactory, name topic.Nam
 }
 
 func TestBrokerSweepTrimsEligibleTopics(t *testing.T) {
-	b, store, factory, _ := newSweepBroker(t, 10*time.Millisecond)
+	// Interval 0 disables the background sweeper so the explicit sweep below
+	// is the only trim; a running ticker raced it and counted a second call.
+	b, store, factory, _ := newSweepBroker(t, 0)
 	ctx := context.Background()
 	if err := b.Start(ctx); err != nil {
 		t.Fatalf("Start() error = %v", err)
