@@ -33,7 +33,8 @@ func NewTopicManager(store ports.MetadataStore, factory ports.LogFactory, regist
 }
 
 // CreateTopic validates the name and configuration, persists the definition,
-// and opens the partition logs. Phase 1 topics are single-partition.
+// and opens the partition logs. Partition counts from 1 to topic.MaxPartitions
+// are accepted.
 func (m *TopicManager) CreateTopic(ctx context.Context, name string, cfg topic.Config, partitions int) (topic.Topic, error) {
 	n, err := topic.NewName(name)
 	if err != nil {
@@ -43,7 +44,7 @@ func (m *TopicManager) CreateTopic(ctx context.Context, name string, cfg topic.C
 	if err != nil {
 		return topic.Topic{}, err
 	}
-	if partitions != 1 {
+	if partitions < 1 || partitions > topic.MaxPartitions {
 		return topic.Topic{}, topic.ErrInvalidPartitionCount
 	}
 	if _, ok, err := m.store.GetTopic(ctx, n); err != nil {

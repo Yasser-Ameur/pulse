@@ -1,8 +1,7 @@
 // Package partition defines partition identity and state.
 //
-// A partition is an ordered record sequence within a topic. Phase 1 topics
-// have exactly one partition, but the model is partition-aware from the start
-// so that multi-partition topics require no domain change.
+// A partition is an ordered record sequence within a topic. A topic may have
+// any number of partitions up to topic.MaxPartitions.
 package partition
 
 import (

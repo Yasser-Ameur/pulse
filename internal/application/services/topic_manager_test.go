@@ -52,7 +52,7 @@ func TestCreateTopicRejectsInvalidInput(t *testing.T) {
 		{"bad/name", 1, topic.ErrInvalidName},
 		{"__reserved", 1, topic.ErrReservedName},
 		{"valid", 0, topic.ErrInvalidPartitionCount},
-		{"valid", 2, topic.ErrInvalidPartitionCount},
+		{"valid", 257, topic.ErrInvalidPartitionCount},
 	}
 	for _, c := range cases {
 		if _, err := m.CreateTopic(ctx, c.name, topic.DefaultConfig(), c.partitions); !errors.Is(err, c.want) {
@@ -121,6 +121,55 @@ func TestDeleteTopic(t *testing.T) {
 	}
 	if fl, ok := lg.(*fakeLog); ok && !fl.closed {
 		t.Fatal("log not closed during delete")
+	}
+}
+
+func TestCreateTopicMultiplePartitions(t *testing.T) {
+	m, store, factory, registry := newTestTopicManager(t)
+	ctx := context.Background()
+
+	tpc, err := m.CreateTopic(ctx, "orders", topic.DefaultConfig(), 4)
+	if err != nil {
+		t.Fatalf("CreateTopic() error = %v", err)
+	}
+	if tpc.Partitions != 4 {
+		t.Fatalf("CreateTopic() Partitions = %d, want 4", tpc.Partitions)
+	}
+	if _, ok, err := store.GetTopic(ctx, tpc.Name); err != nil || !ok {
+		t.Fatalf("store.GetTopic() = %v, %v; want found", ok, err)
+	}
+	if len(factory.created) != 4 {
+		t.Fatalf("factory.created = %v, want 4 partition logs", factory.created)
+	}
+	for p := 0; p < 4; p++ {
+		if _, ok := registry.Log(tpc.Name, partition.ID(p)); !ok {
+			t.Fatalf("registry has no log for partition %d", p)
+		}
+	}
+}
+
+func TestDeleteTopicMultiplePartitions(t *testing.T) {
+	m, store, factory, registry := newTestTopicManager(t)
+	ctx := context.Background()
+
+	tpc, err := m.CreateTopic(ctx, "orders", topic.DefaultConfig(), 4)
+	if err != nil {
+		t.Fatalf("CreateTopic() error = %v", err)
+	}
+
+	if err := m.DeleteTopic(ctx, "orders"); err != nil {
+		t.Fatalf("DeleteTopic() error = %v", err)
+	}
+	if _, ok, _ := store.GetTopic(ctx, tpc.Name); ok {
+		t.Fatal("topic still in store after delete")
+	}
+	if len(factory.deleted) != 4 {
+		t.Fatalf("factory.deleted = %v, want 4 partition logs", factory.deleted)
+	}
+	for p := 0; p < 4; p++ {
+		if _, ok := registry.Log(tpc.Name, partition.ID(p)); ok {
+			t.Fatalf("registry still has log for partition %d after delete", p)
+		}
 	}
 }
 

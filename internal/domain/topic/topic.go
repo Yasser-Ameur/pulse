@@ -23,6 +23,8 @@ const (
 	DefaultMaxMessageBytes int64 = 1 << 20 // 1 MiB
 	// MaxMessageBytes is the hard cap on a topic's per-message payload limit.
 	MaxMessageBytes int64 = 1 << 26 // 64 MiB
+	// MaxPartitions is the hard cap on a topic's partition count.
+	MaxPartitions = 256
 )
 
 // namePattern restricts topic names to URL- and path-safe characters. Names
@@ -137,7 +139,7 @@ func (c Config) Validate() (Config, error) {
 type Topic struct {
 	// Name uniquely identifies the topic within the cluster.
 	Name Name
-	// Partitions is the number of partitions. Phase 1 topics have exactly one.
+	// Partitions is the number of partitions, from 1 to MaxPartitions.
 	Partitions int
 	// Config holds the durable topic limits.
 	Config Config
