@@ -178,7 +178,7 @@ The full scan proceeds as follows:
      and the corruption is logged;
    - otherwise the batch is accepted and LEO advances.
 4. Rebuild the active segment's index tail if truncation occurred.
-5. Recompute LEO and high watermark from the final offsets.
+5. Recompute LEO from the final offsets.
 
 A torn tail is therefore always truncated to the last fully-written, CRC-valid
 batch — never partially accepted. This is what makes guarantee #1 hold across

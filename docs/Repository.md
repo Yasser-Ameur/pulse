@@ -42,6 +42,7 @@ pulse/
 │   │   │   │   ├── index/        #     Sparse offset index
 │   │   │   │   ├── segment/      #     Immutable segment files
 │   │   │   │   ├── recovery/     #     Crash recovery and truncation
+│   │   │   │   ├── snapshot/     #     Durable recovery checkpoints
 │   │   │   │   └── log/          #     Log coordinator
 │   │   │   └── metadata/         #   Metadata plane: PebbleMetadataStore, InMemoryMetadataStore
 │   │   └── grpc/                 #   gRPC server plumbing + internal client
@@ -50,6 +51,7 @@ pulse/
 │   └── testutil/                 # In-process broker harness for integration tests
 ├── tests/integration/            # End-to-end tests against a real in-process broker
 ├── examples/                     # Runnable example programs
+├── bench/                        # Separate module: benchmark harness vs. other brokers
 ├── docs/                         # Architecture and design documentation
 └── .github/workflows/ci.yml      # CI pipeline
 ```
@@ -83,5 +85,8 @@ pulse/
 2. No package outside `cmd/` and `internal/server/` may import `adapters` and
    `infrastructure` together.
 3. `domain` never imports anything outside the standard library and `oklog/ulid`.
-4. Every package has a `doc.go`; every exported symbol is documented.
+4. Every package has a package comment on the file that best represents it
+   (a `doc.go` only where no single file is the obvious home, as in
+   `adapters/grpc`, `domain/timeutil`, and `infrastructure/storage/metadata`);
+   every exported symbol is documented.
 5. Generated files (`pkg/api/**`) are committed but never hand-edited.

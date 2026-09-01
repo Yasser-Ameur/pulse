@@ -67,9 +67,9 @@ make build
 bin/pulse-server --config examples/config.yaml
 
 # in another shell
-bin/pulse-cli topic create orders
-bin/pulse-cli publish orders --key user-42 --value '{"sku":"a1"}'
-bin/pulse-cli consume orders --follow --consumer warehouse
+bin/pulse-cli topics create orders
+bin/pulse-cli publish orders --key user-42 --message '{"sku":"a1"}'
+bin/pulse-cli subscribe orders --follow --consumer warehouse
 ```
 
 See [examples/](examples/) for configs and runnable programs.
@@ -109,8 +109,9 @@ make test-race # go test -race ./...
 make coverage # coverage report (coverage.out, coverage.html)
 ```
 
-CI (GitHub Actions) runs formatting, linting, unit + integration tests with the
-race detector, builds both binaries, and collects coverage.
+CI (GitHub Actions) checks formatting, vets and lints, runs unit and
+integration tests, runs them again with the race detector, and builds both
+binaries. It does not collect coverage; run `make coverage` locally for that.
 
 ## License
 

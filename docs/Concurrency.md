@@ -11,7 +11,7 @@ obvious ownership. We deliberately avoid speculative parallelism.
 |---|---|---|
 | gRPC server accept loop | `infrastructure/grpc.Server` | Started by `server.Run`, stopped by `GracefulStop`. |
 | Per-RPC handler | gRPC runtime | One per in-flight unary RPC; owned by grpc-go. |
-| Per-subscription reader | `services.Subscriber` | One per active `Subscribe` stream; exits when the stream ends or the broker stops. |
+| Per-subscription reader | gRPC handler goroutine | Runs inline on the RPC handler for `Subscribe`; `services.Subscriber` spawns no goroutine of its own and exits when the stream ends or its context is canceled. |
 | Log data-readiness notification | engine `Log` | None — implemented with channel close/replace (below), no goroutine. |
 
 Pulse does **not** spawn a background writer goroutine per log. Writes happen
@@ -23,8 +23,9 @@ which is the simplest way to keep the durable-order invariant:
 ## 2. Locking
 
 - **`LogRegistry`** (`application/services`) owns a `sync.RWMutex` over the
-  topic → log map. `Get` takes a read lock; `Register`/`Unregister`/`CloseAll`
-  take the write lock.
+  topic → log map. `Topic`/`Log`/`Topics`/`Logs` take a read lock;
+  `RegisterTopic`/`RegisterLog`/`UnregisterLog`/`RemoveTopic` take the write
+  lock.
 - **Each `Log`** (engine) owns its own `sync.RWMutex`:
   - write lock for `Append` (append + fsync + index append + data-ready notify),
     `Truncate`, and `Close`;
@@ -89,7 +90,10 @@ Exactly one documented sequence, driven by `services.Broker.Shutdown(ctx)`:
 2. Health status flips to `NOT_SERVING` so load balancers and probes stop
    routing work.
 3. Transition `Draining → Stopping`.
-4. All subscription readers are canceled via their contexts.
+4. In-flight `Subscribe` streams are not canceled directly; they end when
+   `GracefulStop` finishes draining them within the grace timeout, or when the
+   timeout expires and `Stop()` force-closes them. A drain that cancels
+   followers explicitly is not implemented today.
 5. Every open log is `Sync`ed (final durability flush) then `Close`d.
 6. The metadata store is closed (Pebble flushes its WAL).
 7. Transition `Stopping → Stopped`; the process may exit.

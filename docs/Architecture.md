@@ -85,7 +85,7 @@ Entity / value objects (all in `internal/domain`):
 | `Record` | `message` | A `Message` bound to a log position (offset + timestamp). |
 | `RecordBatch` | `message` | An ordered group of records written atomically. |
 | `Topic`, `TopicName`, `TopicConfig` | `topic` | Named event stream with validation and durable limits. |
-| `Partition`, `PartitionID` | `partition` | Ordered record sequence; owns LEO/HW rules. |
+| `Partition`, `PartitionID` | `partition` | Partition identity plus its lifecycle state. |
 | `Offset` | `offset` | Immutable log position. |
 | `Broker`, `BrokerID`, `NodeID`, `ClusterID`, `BrokerState` | `broker` | Broker identity and lifecycle. |
 | `ConsumerID`, `Subscription` | `consumer` | Consumer identity and position intent. |

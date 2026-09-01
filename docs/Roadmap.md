@@ -23,7 +23,8 @@ What Storage.md already specifies but Phase 1 defers:
   reference model (payloads and timestamps preserved, offsets contiguous).
 - **Shipped**: data-directory layout fix (topic/partition paths).
 - Remaining: compaction for compacted topics (last-writer-wins per key, address
-  space preserved) and read-only memory mapping of sealed segments.
+  space preserved, design in [compaction-design.md](compaction-design.md)) and
+  read-only memory mapping of sealed segments.
 
 ## Phase 3 — Networking
 

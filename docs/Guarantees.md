@@ -82,9 +82,9 @@ existing cursor is returned, so a late or duplicated `Ack` cannot rewind a
 consumer. An offset above the log's end is accepted by `Ack` but makes the next
 `Subscribe` fail with `OutOfRange`.
 
-Note that `AckRequest.offset` in `api/proto/pulse/v1/pubsub.proto` is documented
-as "the last offset successfully processed". That comment is wrong and does not
-match the implementation; this section describes the behaviour.
+`AckRequest.offset` in `api/proto/pulse/v1/pubsub.proto` documents this
+correctly today: the next offset the consumer wants, not the last one it
+processed.
 
 ## 4. Ordering
 

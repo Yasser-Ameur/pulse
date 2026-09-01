@@ -104,7 +104,7 @@ Domain errors are mapped to canonical gRPC codes by the adapter:
 
 | Domain error | gRPC code |
 |---|---|
-| `topic.ErrInvalidName`, `topic.ErrInvalidConfig`, `message.ErrInvalid` | `InvalidArgument` |
+| `topic.ErrInvalidName`, `topic.ErrInvalidConfig`, `message.ErrInvalidMessage` | `InvalidArgument` |
 | `topic.ErrNotFound`, partition not found | `NotFound` |
 | `topic.ErrAlreadyExists` | `AlreadyExists` |
 | `offset.ErrOutOfRange` | `OutOfRange` |
@@ -133,8 +133,9 @@ not found: orders`). No stack traces are leaked to clients.
   `internal/infrastructure/config`).
 - Max receive/send message sizes are configurable and default to 64 MiB so
   batches are not artificially limited by transport.
-- TLS is not enabled in Phase 1; the server and client plumbing accept
-  `grpc.Creds` options so TLS is a configuration change in a later phase.
+- TLS is not enabled in Phase 1. The internal client's `Dial` accepts extra
+  `grpc.DialOption`s, so a caller can pass credentials today; the server has no
+  equivalent credentials seam yet.
 - The internal client (`internal/infrastructure/grpc/client`) exposes the
   stream via a callback `func(record) error` so the CLI and tests share one
   consumption path.
