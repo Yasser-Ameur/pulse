@@ -31,7 +31,7 @@ every-write`, and before fsync under `sync-mode: interval` (losing up to
 be delivered before it is durable** — there is no high watermark in the log.
 
 Not provided, deliberately: exactly-once delivery, clustering, replication,
-consumer groups, TLS, and authentication.
+consumer groups, and authentication. TLS is provided (see Highlights below).
 
 Read [docs/Guarantees.md](docs/Guarantees.md) before writing a consumer — it
 states each of these precisely, names the code that implements them, and lists
@@ -53,7 +53,21 @@ what Pulse does not give you.
   test, or run (`go test ./...`). Docker/Testcontainers is reserved for future
   cluster testing.
 - **Deterministic**: injectable clock, typed errors, total per-partition order,
-  and one documented shutdown sequence.
+  and one documented shutdown sequence: drain followers, then `GracefulStop`,
+  then flush and close storage, with the monitor listener staying up
+  throughout (see [Operations.md](docs/Operations.md)).
+- **Production probes and metrics**: a separate monitor listener (default
+  `127.0.0.1:9091`) serves `/healthz` (liveness), `/readyz` (readiness), `/varz`
+  (JSON status), and `/metrics` (Prometheus), so Kubernetes and Prometheus need
+  no data-plane access (see [Configuration.md](docs/Configuration.md)).
+- **TLS and mTLS**: `tls.cert-file`/`tls.key-file` enable server TLS,
+  `tls.client-ca-file` adds client certificate verification; the public Go
+  client and `pulse-cli` (`--tls-ca`, `--tls-cert`, `--tls-key`,
+  `--tls-skip-verify`) dial with the same credentials (see
+  [Client.md](docs/Client.md)).
+- **A public Go client**: `pkg/client` is a standalone, importable SDK with
+  automatic retry on `Unavailable` and transparent `Subscribe` resume (see
+  [Client.md](docs/Client.md)).
 
 ## Quickstart
 
@@ -63,16 +77,43 @@ Requires Go 1.26+.
 # build both binaries
 make build
 
-# start a broker on 127.0.0.1:9090 with data in ./data
+# start a broker on 127.0.0.1:9090 (gRPC) and 127.0.0.1:9091 (health,
+# readiness, metrics) with data in ./data
 bin/pulse-server --config examples/config.yaml
 
 # in another shell
 bin/pulse-cli topics create orders
 bin/pulse-cli publish orders --key user-42 --message '{"sku":"a1"}'
 bin/pulse-cli subscribe orders --follow --consumer warehouse
+
+# with TLS: bin/pulse-cli --tls-ca ca-cert.pem ...
 ```
 
-See [examples/](examples/) for configs and runnable programs.
+Or drive it from Go with the public client, `pkg/client`:
+
+```go
+c, err := client.Dial("127.0.0.1:9090")
+if err != nil {
+    log.Fatal(err)
+}
+defer c.Close()
+
+ctx := context.Background()
+if _, err := c.Publish(ctx, "orders", 0, client.Message{
+    Payload: []byte(`{"sku":"a1"}`),
+}); err != nil {
+    log.Fatal(err)
+}
+
+err = c.Subscribe(ctx, "orders", 0, client.SubscribeOptions{Consumer: "warehouse"},
+    func(r client.Record) error {
+        fmt.Println(r.Offset, string(r.Message.Payload))
+        return nil
+    })
+```
+
+See [examples/](examples/) for configs and runnable programs, and
+[Client.md](docs/Client.md) for the full client reference.
 
 ## Repository map
 
@@ -97,6 +138,9 @@ See [examples/](examples/) for configs and runnable programs.
 - [Storage.md](docs/Storage.md) — log format, indexes, recovery, retention
 - [Protocol.md](docs/Protocol.md) — gRPC contract and versioning
 - [Concurrency.md](docs/Concurrency.md) — goroutines, locks, shutdown
+- [Configuration.md](docs/Configuration.md): every config key, TLS setup, monitor endpoints
+- [Operations.md](docs/Operations.md): production shutdown, probes, metrics, limits, readiness checklist
+- [Client.md](docs/Client.md): the public Go client and CLI TLS flags
 - [Roadmap.md](docs/Roadmap.md) — phase plan and extension points
 
 ## Development
@@ -115,4 +159,4 @@ binaries. It does not collect coverage; run `make coverage` locally for that.
 
 ## License
 
-To be decided before first public release.
+Apache License 2.0. See [LICENSE](LICENSE).

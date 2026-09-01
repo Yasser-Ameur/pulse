@@ -28,11 +28,18 @@ What Storage.md already specifies but Phase 1 defers:
 
 ## Phase 3 — Networking
 
+- **Shipped**: TLS and mTLS on the gRPC transport (`tls.cert-file`,
+  `tls.key-file`, `tls.client-ca-file`), covering both server and client
+  (`internal/infrastructure/grpc/server.go`, `pkg/client.WithTLS`). See
+  [Configuration.md](Configuration.md) and [Client.md](Client.md).
+- **Shipped**: keepalive parameters and enforcement policy, panic-recovering
+  interceptors, and reflection (`internal/infrastructure/grpc/server.go`).
 - Batching and compression on the wire (reserved flags in the batch format).
-- Heartbeats and reconnect semantics in the client (`Subscribe`/`Publish`
-  streaming RPCs).
-- Authentication hooks (`ports.Authentication` + gRPC interceptors) and TLS.
-- Rich flow-control tuning surfaced as configuration.
+- Reconnect semantics in the public client are shipped (`pkg/client.Publish`
+  retries on `Unavailable`; `Subscribe` with `Follow: true` resumes
+  transparently); broker-side heartbeats remain.
+- Remaining: authentication hooks (`ports.Authentication` + gRPC
+  interceptors); rich flow-control tuning surfaced as configuration.
 
 ## Phase 4 — Consumer groups
 
@@ -53,15 +60,20 @@ What Storage.md already specifies but Phase 1 defers:
 
 ## Phase 6 — Observability
 
-- `ports.MetricsRecorder` → Prometheus adapter; OpenTelemetry tracing via gRPC
-  interceptors; structured logging already in place (zap behind `ports.Logger`).
+- **Shipped**: `ports.MetricsRecorder` → Prometheus adapter
+  (`internal/infrastructure/metrics/prometheus.go`), served at `/metrics` on
+  the monitor listener alongside `/healthz`, `/readyz`, and `/varz`
+  (`internal/infrastructure/monitor/monitor.go`). Structured logging is
+  already in place (zap behind `ports.Logger`).
+- Remaining: OpenTelemetry tracing via gRPC interceptors.
 
 ## Phase 7 — SDK
 
-- First-class public SDKs under `pkg/` (Go) and later `sdk/` (Python, Java).
-  The internal client (`internal/infrastructure/grpc/client`) is the seed; it
-  moves to `pkg/` once the API stabilizes.
-- Typed events, batch publish, streaming consumer, automatic reconnect.
+- **Shipped**: the first-class public Go SDK, `pkg/client` (Dial, Publish,
+  Subscribe with follow/resume, Ack, TLS, retry with backoff). See
+  [Client.md](Client.md). `pulse-cli` and the integration tests now dial
+  through it, and the internal gRPC client that used to seed it is deleted.
+- Remaining: `sdk/` SDKs for Python and Java.
 
 ## Out of scope until explicitly scoped
 
