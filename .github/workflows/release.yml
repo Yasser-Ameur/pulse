@@ -80,7 +80,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pulse-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: pulse-*.tar.gz pulse-*.zip
+          path: |
+            pulse-*.tar.gz
+            pulse-*.zip
           if-no-files-found: ignore
 
   release:
