@@ -116,20 +116,7 @@ func NewServer(app *services.Broker, clock ports.Clock, opts Options) *Server {
 // call at debug level with method, code, and duration.
 func unaryInterceptor(logger ports.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
-		start := time.Now()
-		defer func() {
-			if r := recover(); r != nil {
-				if logger != nil {
-					logger.Error("rpc panic",
-						ports.Field{Key: fieldMethod, Value: info.FullMethod},
-						ports.Field{Key: "panic", Value: r},
-						ports.Field{Key: "stack", Value: string(debug.Stack())},
-					)
-				}
-				err = status.Errorf(codes.Internal, "internal error")
-			}
-			logRPC(logger, info.FullMethod, err, time.Since(start))
-		}()
+		defer finishRPC(logger, info.FullMethod, time.Now(), &err)
 		return handler(ctx, req)
 	}
 }
@@ -138,22 +125,26 @@ func unaryInterceptor(logger ports.Logger) grpc.UnaryServerInterceptor {
 // call at debug level with method, code, and duration.
 func streamInterceptor(logger ports.Logger) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
-		start := time.Now()
-		defer func() {
-			if r := recover(); r != nil {
-				if logger != nil {
-					logger.Error("rpc panic",
-						ports.Field{Key: fieldMethod, Value: info.FullMethod},
-						ports.Field{Key: "panic", Value: r},
-						ports.Field{Key: "stack", Value: string(debug.Stack())},
-					)
-				}
-				err = status.Errorf(codes.Internal, "internal error")
-			}
-			logRPC(logger, info.FullMethod, err, time.Since(start))
-		}()
+		defer finishRPC(logger, info.FullMethod, time.Now(), &err)
 		return handler(srv, ss)
 	}
+}
+
+// finishRPC is the deferred tail of both interceptors: it recovers a handler
+// panic as codes.Internal (logging the stack) and logs the completed call.
+// It must be the deferred function itself so recover sees the panic.
+func finishRPC(logger ports.Logger, method string, start time.Time, err *error) {
+	if r := recover(); r != nil {
+		if logger != nil {
+			logger.Error("rpc panic",
+				ports.Field{Key: fieldMethod, Value: method},
+				ports.Field{Key: "panic", Value: r},
+				ports.Field{Key: "stack", Value: string(debug.Stack())},
+			)
+		}
+		*err = status.Errorf(codes.Internal, "internal error")
+	}
+	logRPC(logger, method, *err, time.Since(start))
 }
 
 // logRPC emits a single debug-level line per completed RPC.
