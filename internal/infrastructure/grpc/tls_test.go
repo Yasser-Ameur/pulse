@@ -1,4 +1,4 @@
-package grpc
+package grpc_test
 
 import (
 	"context"
@@ -13,18 +13,13 @@ import (
 	"testing"
 	"time"
 
+	grpctransport "github.com/pulse-stream/pulse/internal/infrastructure/grpc"
+	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
+	"github.com/pulse-stream/pulse/internal/testutil"
+	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-
-	grpclib "google.golang.org/grpc"
-
-	"github.com/pulse-stream/pulse/internal/application/services"
-	"github.com/pulse-stream/pulse/internal/infrastructure/logging"
-	"github.com/pulse-stream/pulse/internal/infrastructure/metrics"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/log"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/metadata"
-	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
 )
 
 // selfSignedCert generates an ephemeral self-signed certificate valid for
@@ -56,41 +51,13 @@ func selfSignedCert(t *testing.T) tls.Certificate {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: cert}
 }
 
-// newTestBroker builds a minimal running broker for a transport-level test.
-func newTestBroker(t *testing.T) *services.Broker {
-	t.Helper()
-	dir := t.TempDir()
-	logger := logging.NewNopLogger()
-	meta, err := metadata.OpenPebble(dir + "/meta")
-	if err != nil {
-		t.Fatalf("OpenPebble() error = %v", err)
-	}
-	factory := log.NewFactory(dir, log.Config{}, logger)
-	app := services.NewBroker(services.BrokerOptions{
-		MetadataStore: meta,
-		LogFactory:    factory,
-		Clock:         timeutil.SystemClock{},
-		Logger:        logger,
-		Metrics:       metrics.NoopRecorder{},
-		ListenAddr:    "127.0.0.1:0",
-		Version:       "test",
-		ReadLimit:     512,
-		ReadMaxBytes:  1 << 20,
-	})
-	if err := app.Start(context.Background()); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
-	return app
-}
-
 // TestServerTLS pins that a server configured with TLS accepts a client
 // dialing with matching credentials and refuses a client dialing insecure.
 func TestServerTLS(t *testing.T) {
 	cert := selfSignedCert(t)
-	app := newTestBroker(t)
+	app := testutil.Start(t, testutil.Options{}).Broker()
 
-	srv := NewServer(app, timeutil.SystemClock{}, Options{
+	srv := grpctransport.NewServer(app, timeutil.SystemClock{}, grpctransport.Options{
 		GraceTimeout: 5 * time.Second,
 		TLS: &tls.Config{
 			Certificates: []tls.Certificate{cert},
