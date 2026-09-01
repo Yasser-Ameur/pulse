@@ -32,6 +32,7 @@ func main() {
 	}
 	root.Flags().StringVar(&configPath, "config", "", "path to YAML config file")
 	root.Flags().BoolVar(&showVer, "version", false, "print version and exit")
+	root.AddCommand(newHealthcheckCmd())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
