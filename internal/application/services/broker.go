@@ -165,6 +165,26 @@ func (b *Broker) Start(ctx context.Context) error {
 	return nil
 }
 
+// Drain moves a Running broker to Draining: new work is rejected with
+// broker.ErrDraining and live Subscribe streams are canceled, while the logs
+// stay open so in-flight publishes can finish. The composition root calls it
+// before the transport's GracefulStop so followers do not hold the grace
+// window; Shutdown repeats it, so skipping Drain is safe. Idempotent.
+func (b *Broker) Drain() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.drainLocked()
+}
+
+func (b *Broker) drainLocked() {
+	if b.state == broker.StateRunning {
+		b.state = broker.StateDraining
+	}
+	if b.drainCancel != nil {
+		b.drainCancel(broker.ErrDraining)
+	}
+}
+
 // Shutdown drains the broker, flushes and closes all logs, closes the metadata
 // store, and reaches the Stopped state. It is idempotent.
 func (b *Broker) Shutdown(ctx context.Context) error {
@@ -173,12 +193,7 @@ func (b *Broker) Shutdown(ctx context.Context) error {
 	if b.state == broker.StateStopped {
 		return nil
 	}
-	if b.state == broker.StateRunning {
-		b.state = broker.StateDraining
-	}
-	if b.drainCancel != nil {
-		b.drainCancel(broker.ErrDraining)
-	}
+	b.drainLocked()
 	if b.state.CanTransitionTo(broker.StateStopping) {
 		b.state = broker.StateStopping
 	}

@@ -232,13 +232,17 @@ func TestBrokerPublishDuringDrainReturnsErrDraining(t *testing.T) {
 	if _, err := b.CreateTopic(ctx, "orders", topic.DefaultConfig(), 1); err != nil {
 		t.Fatalf("CreateTopic() error = %v", err)
 	}
-	b.mu.Lock()
-	b.state = broker.StateDraining
-	b.mu.Unlock()
+	b.Drain()
+	if got := b.State(); got != broker.StateDraining {
+		t.Fatalf("State() after Drain() = %v, want Draining", got)
+	}
 
 	name := mustName(t, "orders")
 	if _, err := b.Publish(ctx, name, partition.ID(0), []message.Message{{Payload: []byte("x")}}); !errors.Is(err, broker.ErrDraining) {
 		t.Fatalf("Publish() during Draining error = %v, want ErrDraining", err)
+	}
+	if err := b.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown() after Drain() error = %v", err)
 	}
 }
 
