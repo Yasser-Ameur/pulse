@@ -36,6 +36,14 @@ const (
 
 	// nullField marks a missing key or value.
 	nullField uint32 = 0xFFFFFFFF
+
+	// flagCompressionMask isolates the (currently unimplemented) compression
+	// codec bits of a batch's flags field.
+	flagCompressionMask uint16 = 0x0007
+	// flagSparseOffsets marks a batch whose records are not encoded at
+	// contiguous offsets starting from the batch's index (a compacted batch
+	// with holes). Set automatically by EncodeBatch.
+	flagSparseOffsets uint16 = 0x0008
 )
 
 // Reserved header keys carrying message metadata through the record frame.
@@ -91,8 +99,12 @@ func EncodeBatch(b *message.RecordBatch) ([]byte, error) {
 	lastMS := b.LastTimestamp.UnixMilli()
 
 	records := make([]byte, 0, 64*len(b.Records))
+	sparse := false
 	for i := range b.Records {
 		r := &b.Records[i]
+		if uint32(r.Offset-b.BaseOffset) != uint32(i) {
+			sparse = true
+		}
 		rec, err := encodeRecord(r, b.BaseOffset, firstMS)
 		if err != nil {
 			return nil, err
@@ -100,10 +112,15 @@ func EncodeBatch(b *message.RecordBatch) ([]byte, error) {
 		records = append(records, rec...)
 	}
 
+	var flags uint16
+	if sparse {
+		flags |= flagSparseOffsets
+	}
+
 	out := make([]byte, HeaderSize+len(records))
 	out[0] = Magic
 	out[1] = Version
-	binary.BigEndian.PutUint16(out[2:4], 0) // flags: no compression
+	binary.BigEndian.PutUint16(out[2:4], flags)
 	binary.BigEndian.PutUint64(out[8:16], uint64(b.BaseOffset))
 	binary.BigEndian.PutUint32(out[16:20], uint32(len(records)))
 	binary.BigEndian.PutUint64(out[20:28], uint64(firstMS))
@@ -132,9 +149,10 @@ func DecodeBatch(data []byte) (*message.RecordBatch, error) {
 		return nil, ErrUnsupportedVersion
 	}
 	flags := binary.BigEndian.Uint16(data[2:4])
-	if flags&0x0007 != 0 {
+	if flags&flagCompressionMask != 0 {
 		return nil, ErrUnsupportedCompression
 	}
+	sparse := flags&flagSparseOffsets != 0
 	base := offset.Offset(binary.BigEndian.Uint64(data[8:16]))
 	batchLen := binary.BigEndian.Uint32(data[16:20])
 	firstMS := int64(binary.BigEndian.Uint64(data[20:28]))
@@ -157,7 +175,7 @@ func DecodeBatch(data []byte) (*message.RecordBatch, error) {
 	cur := &cursor{buf: records}
 	decoded := make([]message.Record, 0, recordCount)
 	for i := 0; i < int(recordCount); i++ {
-		rec, err := decodeRecord(cur, base, firstMS, recordCount)
+		rec, err := decodeRecord(cur, base, firstMS, recordCount, sparse)
 		if err != nil {
 			return nil, err
 		}
@@ -203,7 +221,7 @@ func encodeRecord(r *message.Record, base offset.Offset, firstMS int64) ([]byte,
 	rec = binary.BigEndian.AppendUint32(rec, uint32(tsDelta))
 	rec = binary.BigEndian.AppendUint32(rec, delta)
 	rec = appendBytes(rec, r.Message.Key)
-	rec = appendBytes(rec, string(r.Message.Payload))
+	rec = appendNullableBytes(rec, r.Message.Payload)
 	rec = binary.BigEndian.AppendUint32(rec, uint32(len(keys)))
 	for _, k := range keys {
 		rec = appendBytes(rec, k)
@@ -214,9 +232,12 @@ func encodeRecord(r *message.Record, base offset.Offset, firstMS int64) ([]byte,
 }
 
 // decodeRecord reads one record from cur. firstMS is the batch first
-// timestamp; base is the batch base offset; recordCount bounds the record's
-// offset delta so a corrupt frame cannot fabricate offsets outside the batch.
-func decodeRecord(cur *cursor, base offset.Offset, firstMS int64, recordCount uint32) (*message.Record, error) {
+// timestamp; base is the batch base offset. For a non-sparse batch,
+// recordCount bounds the record's offset delta so a corrupt frame cannot
+// fabricate offsets outside the batch; a sparse (compacted) batch instead
+// accepts any delta within a generous sanity bound, since survivors keep
+// their original, non-contiguous offsets.
+func decodeRecord(cur *cursor, base offset.Offset, firstMS int64, recordCount uint32, sparse bool) (*message.Record, error) {
 	length, err := cur.readUint32()
 	if err != nil {
 		return nil, err
@@ -237,7 +258,11 @@ func decodeRecord(cur *cursor, base offset.Offset, firstMS int64, recordCount ui
 	if err != nil {
 		return nil, ErrInvalidRecordLength
 	}
-	if offDelta >= recordCount {
+	if sparse {
+		if offDelta >= 1<<31 {
+			return nil, ErrOffsetDeltaOutOfRange
+		}
+	} else if offDelta >= recordCount {
 		return nil, ErrOffsetDeltaOutOfRange
 	}
 	key, err := c.readNullableString()
@@ -376,6 +401,18 @@ func applySystemHeader(m *message.Message, key, value string) error {
 func appendBytes(buf []byte, s string) []byte {
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(s)))
 	return append(buf, s...)
+}
+
+// appendNullableBytes writes a length-prefixed value, encoding a nil slice as
+// nullField (a tombstone marker) and any non-nil slice, including an empty
+// one, as its literal length. This is what lets a record's payload
+// distinguish "no value" from "zero-length value".
+func appendNullableBytes(buf []byte, b []byte) []byte {
+	if b == nil {
+		return binary.BigEndian.AppendUint32(buf, nullField)
+	}
+	buf = binary.BigEndian.AppendUint32(buf, uint32(len(b)))
+	return append(buf, b...)
 }
 
 // cursor is a bounds-checked big-endian reader.

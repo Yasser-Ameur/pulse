@@ -2,11 +2,13 @@ package codec
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/pulse-stream/pulse/internal/domain/message"
+	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/checksum"
 )
 
 func sampleBatch() *message.RecordBatch {
@@ -171,9 +173,11 @@ func TestDecodeRejectsCorruption(t *testing.T) {
 	})
 }
 
-func TestDecodeRejectsOutOfRangeOffsetDelta(t *testing.T) {
+func TestDecodeRejectsOutOfRangeOffsetDeltaNonSparse(t *testing.T) {
 	// A record whose offset delta is outside the batch's record count must be
-	// rejected even though the CRC is valid.
+	// rejected for a non-sparse batch, even though the CRC is valid. EncodeBatch
+	// itself always marks such a batch sparse (see TestSparseOffsetsRoundTrip),
+	// so this simulates a corrupted frame that claims to be dense but is not.
 	b := &message.RecordBatch{
 		BaseOffset:     100,
 		FirstTimestamp: time.Now(),
@@ -187,8 +191,82 @@ func TestDecodeRejectsOutOfRangeOffsetDelta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodeBatch() error = %v", err)
 	}
+	if binary.BigEndian.Uint16(enc[2:4])&flagSparseOffsets == 0 {
+		t.Fatalf("expected EncodeBatch to mark this batch sparse")
+	}
+	// Force the sparse flag off and repair the CRC, as if a non-sparse batch
+	// had been corrupted to carry an out-of-range delta.
+	binary.BigEndian.PutUint16(enc[2:4], 0)
+	binary.BigEndian.PutUint32(enc[4:8], checksum.Sum(enc[8:]))
 	if _, err := DecodeBatch(enc); !errors.Is(err, ErrOffsetDeltaOutOfRange) {
 		t.Fatalf("DecodeBatch() error = %v, want ErrOffsetDeltaOutOfRange", err)
+	}
+}
+
+func TestSparseOffsetsRoundTrip(t *testing.T) {
+	// A batch whose sole record's offset does not match its index (as a
+	// compacted batch with holes produces) is legitimate: EncodeBatch marks it
+	// sparse and DecodeBatch accepts the non-contiguous offset.
+	b := &message.RecordBatch{
+		BaseOffset:     100,
+		FirstTimestamp: time.Now(),
+		LastTimestamp:  time.Now(),
+		Records: []message.Record{{
+			Offset:  105,
+			Message: message.Message{Key: "k", Payload: []byte("x")},
+		}},
+	}
+	enc, err := EncodeBatch(b)
+	if err != nil {
+		t.Fatalf("EncodeBatch() error = %v", err)
+	}
+	if binary.BigEndian.Uint16(enc[2:4])&flagSparseOffsets == 0 {
+		t.Fatalf("expected sparse flag set")
+	}
+	got, err := DecodeBatch(enc)
+	if err != nil {
+		t.Fatalf("DecodeBatch() error = %v", err)
+	}
+	if len(got.Records) != 1 || got.Records[0].Offset != 105 {
+		t.Fatalf("Records = %+v, want single record at offset 105", got.Records)
+	}
+}
+
+func TestLegacyContiguousBatchHasNoSparseFlag(t *testing.T) {
+	// A normal (non-compacted) batch's records are always dense, so the flag
+	// must never be set: old readers that do not know about it see zero.
+	enc, err := EncodeBatch(sampleBatch())
+	if err != nil {
+		t.Fatalf("EncodeBatch() error = %v", err)
+	}
+	if binary.BigEndian.Uint16(enc[2:4])&flagSparseOffsets != 0 {
+		t.Fatalf("expected no sparse flag on a contiguous batch")
+	}
+}
+
+func TestNullPayloadTombstoneRoundTrip(t *testing.T) {
+	b := &message.RecordBatch{
+		BaseOffset:     5,
+		FirstTimestamp: time.Now(),
+		LastTimestamp:  time.Now(),
+		Records: []message.Record{
+			{Offset: 5, Message: message.Message{Key: "k", Payload: nil}},       // tombstone
+			{Offset: 6, Message: message.Message{Key: "k2", Payload: []byte{}}}, // empty, not a tombstone
+		},
+	}
+	enc, err := EncodeBatch(b)
+	if err != nil {
+		t.Fatalf("EncodeBatch() error = %v", err)
+	}
+	got, err := DecodeBatch(enc)
+	if err != nil {
+		t.Fatalf("DecodeBatch() error = %v", err)
+	}
+	if got.Records[0].Message.Payload != nil {
+		t.Fatalf("record 0 payload = %v, want nil (tombstone)", got.Records[0].Message.Payload)
+	}
+	if got.Records[1].Message.Payload == nil || len(got.Records[1].Message.Payload) != 0 {
+		t.Fatalf("record 1 payload = %v, want non-nil empty slice", got.Records[1].Message.Payload)
 	}
 }
 
