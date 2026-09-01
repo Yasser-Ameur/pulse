@@ -66,6 +66,10 @@ coverage-check:
 		'/^total:/ { pct = $$3 + 0; printf "total coverage: %.1f%% (floor %d%%)\n", pct, floor; \
 		if (pct < floor) { print "coverage below floor"; exit 1 } }'
 
+.PHONY: image
+image:
+	docker build -t pulse:$(VERSION) --build-arg VERSION=$(VERSION) .
+
 .PHONY: clean
 clean:
 	rm -rf bin dist data coverage.out coverage.html
