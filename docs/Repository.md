@@ -34,7 +34,7 @@ pulse/
 │   │   ├── config/               #   YAML + environment configuration and validation
 │   │   ├── timeutil/             #   SystemClock
 │   │   ├── logging/              #   Zap adapter behind ports.Logger
-│   │   ├── metrics/              #   Noop recorder (future Prometheus/OTel adapters)
+│   │   ├── metrics/              #   Prometheus recorder and Noop recorder behind ports.MetricsRecorder
 │   │   ├── storage/
 │   │   │   ├── filesystem/       #   Path layout, file I/O, durability helpers
 │   │   │   ├── engine/           #   Append-only log engine (data plane)

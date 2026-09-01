@@ -146,7 +146,7 @@ See [examples/](examples/) for configs and runnable programs, and
 ## Development
 
 ```bash
-make fmt      # gofmt + goimports
+make fmt      # gofmt
 make lint     # golangci-lint
 make test     # go test ./...
 make test-race # go test -race ./...

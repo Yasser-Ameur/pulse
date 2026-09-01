@@ -212,10 +212,11 @@ the ones that are scheduled to the phase that adds them.
   consumer that cannot process a record has one option: do not advance its
   cursor.
 - **Replay by timestamp.** Not exposed. Resume is by offset only.
-- **TLS.** Not enabled; the transport is plaintext gRPC. Deferred to Phase 3.
-  `client.Dial` takes variadic `grpc.DialOption`s, so a caller can already
-  supply credentials, but `infrastructure/grpc.NewServer` exposes no way to
-  pass `grpc.Creds` — the server half still has to be built.
+- **TLS is off by default.** The transport is plaintext gRPC until
+  `tls.cert-file` and `tls.key-file` are set, and client certificates are only
+  checked when `tls.client-ca-file` is set (`server.buildTLSConfig`,
+  `docs/Configuration.md`). Without it, anything on the network can read the
+  traffic.
 - **Authentication and authorization.** None. Any client that can reach the
   listener can create, delete, publish to, and read every topic, and can move
   any consumer's cursor. Do not expose the listener outside a trusted network.
