@@ -24,20 +24,27 @@ type statusResponse struct {
 
 // varzResponse is the body of /varz.
 type varzResponse struct {
-	Version       string               `json:"version"`
-	BrokerID      string               `json:"broker_id"`
-	ClusterID     string               `json:"cluster_id"`
-	State         string               `json:"state"`
-	UptimeSeconds float64              `json:"uptime_seconds"`
-	StartedAt     time.Time            `json:"started_at"`
-	Topics        []services.TopicView `json:"topics"`
-	GoVersion     string               `json:"go_version"`
-	NumGoroutine  int                  `json:"num_goroutine"`
+	Version          string               `json:"version"`
+	BrokerID         string               `json:"broker_id"`
+	ClusterID        string               `json:"cluster_id"`
+	State            string               `json:"state"`
+	UptimeSeconds    float64              `json:"uptime_seconds"`
+	StartedAt        time.Time            `json:"started_at"`
+	Topics           []services.TopicView `json:"topics"`
+	GoVersion        string               `json:"go_version"`
+	NumGoroutine     int                  `json:"num_goroutine"`
+	Connections      int64                `json:"connections"`
+	Subscriptions    int64                `json:"subscriptions"`
+	PublishedRecords int64                `json:"published_records"`
+	PublishedBytes   int64                `json:"published_bytes"`
+	DeliveredRecords int64                `json:"delivered_records"`
+	DeliveredBytes   int64                `json:"delivered_bytes"`
 }
 
 // New builds the monitor HTTP handler for broker b, reporting version and
-// startedAt, and serving reg's collected metrics at /metrics.
-func New(b *services.Broker, version string, startedAt time.Time, reg prometheus.Gatherer) http.Handler {
+// startedAt, and serving reg's collected metrics at /metrics. connections
+// reports the transport's current connection count.
+func New(b *services.Broker, version string, startedAt time.Time, reg prometheus.Gatherer, connections func() int64) http.Handler {
 	mux := http.NewServeMux()
 
 	// /healthz is liveness: the process is alive until the broker reaches
@@ -64,16 +71,23 @@ func New(b *services.Broker, version string, startedAt time.Time, reg prometheus
 
 	mux.HandleFunc("/varz", func(w http.ResponseWriter, _ *http.Request) {
 		info := b.BrokerInfo()
+		stats := b.Stats()
 		resp := varzResponse{
-			Version:       version,
-			BrokerID:      string(info.BrokerID),
-			ClusterID:     string(info.ClusterID),
-			State:         info.State.String(),
-			UptimeSeconds: time.Since(startedAt).Seconds(),
-			StartedAt:     startedAt,
-			Topics:        b.TopicsView(),
-			GoVersion:     runtime.Version(),
-			NumGoroutine:  runtime.NumGoroutine(),
+			Version:          version,
+			BrokerID:         string(info.BrokerID),
+			ClusterID:        string(info.ClusterID),
+			State:            info.State.String(),
+			UptimeSeconds:    time.Since(startedAt).Seconds(),
+			StartedAt:        startedAt,
+			Topics:           b.TopicsView(),
+			GoVersion:        runtime.Version(),
+			NumGoroutine:     runtime.NumGoroutine(),
+			Connections:      connections(),
+			Subscriptions:    stats.Subscriptions,
+			PublishedRecords: stats.PublishedRecords,
+			PublishedBytes:   stats.PublishedBytes,
+			DeliveredRecords: stats.DeliveredRecords,
+			DeliveredBytes:   stats.DeliveredBytes,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

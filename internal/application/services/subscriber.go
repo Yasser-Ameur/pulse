@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/pulse-stream/pulse/internal/application/ports"
@@ -22,6 +23,10 @@ type Subscriber struct {
 	metrics      ports.MetricsRecorder
 	readLimit    int
 	readMaxBytes int
+
+	deliveredRecords *atomic.Int64
+	deliveredBytes   *atomic.Int64
+	subscriptions    *atomic.Int64
 }
 
 // SubscriberOptions configures the read behavior of a Subscriber.
@@ -32,15 +37,22 @@ type SubscriberOptions struct {
 	ReadMaxBytes int
 }
 
-// NewSubscriber builds a Subscriber over the given registry and metadata store.
-func NewSubscriber(registry *LogRegistry, store ports.MetadataStore, opts SubscriberOptions, logger ports.Logger, metrics ports.MetricsRecorder) *Subscriber {
+// NewSubscriber builds a Subscriber over the given registry and metadata
+// store. deliveredRecords, deliveredBytes, and subscriptions are the
+// broker-wide Stats counters: the first two are incremented alongside
+// metrics on every delivered read, and subscriptions tracks live Subscribe
+// calls.
+func NewSubscriber(registry *LogRegistry, store ports.MetadataStore, opts SubscriberOptions, logger ports.Logger, metrics ports.MetricsRecorder, deliveredRecords, deliveredBytes, subscriptions *atomic.Int64) *Subscriber {
 	return &Subscriber{
-		registry:     registry,
-		store:        store,
-		logger:       logger,
-		metrics:      metrics,
-		readLimit:    opts.ReadLimit,
-		readMaxBytes: opts.ReadMaxBytes,
+		registry:         registry,
+		store:            store,
+		logger:           logger,
+		metrics:          metrics,
+		readLimit:        opts.ReadLimit,
+		readMaxBytes:     opts.ReadMaxBytes,
+		deliveredRecords: deliveredRecords,
+		deliveredBytes:   deliveredBytes,
+		subscriptions:    subscriptions,
 	}
 }
 
@@ -51,6 +63,8 @@ func (s *Subscriber) Subscribe(ctx context.Context, sub consumer.Subscription, e
 	if err := sub.Validate(); err != nil {
 		return err
 	}
+	s.subscriptions.Add(1)
+	defer s.subscriptions.Add(-1)
 	lg, ok := s.registry.Log(sub.Topic, sub.Partition)
 	if !ok {
 		return partition.ErrNotFound
@@ -84,6 +98,8 @@ func (s *Subscriber) Subscribe(ctx context.Context, sub consumer.Subscription, e
 			s.metrics.RecordConsume(len(records), payloadBytes)
 			s.metrics.RecordBytesRead(int64(payloadBytes))
 			s.metrics.RecordConsumeLatency(time.Since(start))
+			s.deliveredRecords.Add(int64(len(records)))
+			s.deliveredBytes.Add(int64(payloadBytes))
 			pos = records[len(records)-1].Offset + 1
 			continue
 		}

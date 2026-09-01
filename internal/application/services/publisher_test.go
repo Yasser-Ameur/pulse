@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/pulse-stream/pulse/internal/domain/message"
@@ -19,7 +20,8 @@ func newTestPublisher(t *testing.T) (*Publisher, *LogRegistry, topic.Topic, *fak
 	r.RegisterTopic(tpc)
 	lg := newFakeLog()
 	r.RegisterLog(name, partition.ID(0), lg)
-	p := NewPublisher(r, &fakeClock{now: timeNow()}, &fakeLogger{}, fakeMetrics{})
+	var publishedRecords, publishedBytes atomic.Int64
+	p := NewPublisher(r, &fakeClock{now: timeNow()}, &fakeLogger{}, fakeMetrics{}, &publishedRecords, &publishedBytes)
 	return p, r, tpc, lg
 }
 

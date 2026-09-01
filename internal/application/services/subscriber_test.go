@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,7 +24,8 @@ func newTestSubscriber(t *testing.T) (*Subscriber, *LogRegistry, *fakeStore, *fa
 	lg := newFakeLog()
 	r.RegisterLog(name, partition.ID(0), lg)
 	store := newFakeStore()
-	s := NewSubscriber(r, store, SubscriberOptions{ReadLimit: 10, ReadMaxBytes: 1 << 20}, &fakeLogger{}, fakeMetrics{})
+	var deliveredRecords, deliveredBytes, subscriptions atomic.Int64
+	s := NewSubscriber(r, store, SubscriberOptions{ReadLimit: 10, ReadMaxBytes: 1 << 20}, &fakeLogger{}, fakeMetrics{}, &deliveredRecords, &deliveredBytes, &subscriptions)
 	return s, r, store, lg
 }
 

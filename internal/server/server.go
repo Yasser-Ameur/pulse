@@ -96,24 +96,6 @@ func Run(cfg config.Config) error {
 		return err
 	}
 
-	if cfg.MonitorAddr != "" {
-		monLn, err := net.Listen("tcp", cfg.MonitorAddr)
-		if err != nil {
-			_ = app.Shutdown(context.Background())
-			return err
-		}
-		startedAt := app.BrokerInfo().StartedAt
-		monSrv = &http.Server{
-			Handler:           monitor.New(app, Version, startedAt, reg),
-			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       10 * time.Second,
-			WriteTimeout:      30 * time.Second,
-			IdleTimeout:       120 * time.Second,
-		}
-		logger.Info("monitor server listening", ports.Field{Key: "address", Value: cfg.MonitorAddr})
-		go func() { _ = monSrv.Serve(monLn) }()
-	}
-
 	if len(cfg.Auth.Tokens) == 0 {
 		logger.Warn("authentication disabled; any client can publish and consume")
 	}
@@ -127,6 +109,24 @@ func Run(cfg config.Config) error {
 		Tokens:         cfg.Auth.Tokens,
 	})
 	transport.SetServing(true)
+
+	if cfg.MonitorAddr != "" {
+		monLn, err := net.Listen("tcp", cfg.MonitorAddr)
+		if err != nil {
+			_ = app.Shutdown(context.Background())
+			return err
+		}
+		startedAt := app.BrokerInfo().StartedAt
+		monSrv = &http.Server{
+			Handler:           monitor.New(app, Version, startedAt, reg, transport.Connections),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		logger.Info("monitor server listening", ports.Field{Key: "address", Value: cfg.MonitorAddr})
+		go func() { _ = monSrv.Serve(monLn) }()
+	}
 
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {

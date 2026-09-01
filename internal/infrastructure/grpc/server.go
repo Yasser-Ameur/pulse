@@ -11,6 +11,7 @@ import (
 	"net"
 	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	grpcadapters "github.com/pulse-stream/pulse/internal/adapters/grpc"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 )
 
@@ -66,9 +68,31 @@ func DefaultOptions() Options {
 
 // Server wraps a grpc.Server with the pulse.v1 services and health endpoint.
 type Server struct {
-	grpc   *grpc.Server
-	health *health.Server
-	opts   Options
+	grpc        *grpc.Server
+	health      *health.Server
+	opts        Options
+	connections *atomic.Int64
+}
+
+// connCountHandler is a stats.Handler that counts live connections via
+// ConnBegin/ConnEnd; every other hook is a no-op.
+type connCountHandler struct {
+	connections *atomic.Int64
+}
+
+func (connCountHandler) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context { return ctx }
+func (connCountHandler) HandleRPC(context.Context, stats.RPCStats)                       {}
+func (connCountHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (h connCountHandler) HandleConn(_ context.Context, s stats.ConnStats) {
+	switch s.(type) {
+	case *stats.ConnBegin:
+		h.connections.Add(1)
+	case *stats.ConnEnd:
+		h.connections.Add(-1)
+	}
 }
 
 // NewServer constructs a Server and registers the Broker and PubSub services.
@@ -92,11 +116,14 @@ func NewServer(app *services.Broker, clock ports.Clock, opts Options) *Server {
 		streamInterceptors = append(streamInterceptors, streamAuthInterceptor(opts.Tokens))
 	}
 
+	connections := &atomic.Int64{}
+
 	serverOpts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(opts.MaxRecvMsgSize),
 		grpc.MaxSendMsgSize(opts.MaxSendMsgSize),
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
+		grpc.StatsHandler(connCountHandler{connections: connections}),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle: 5 * time.Minute,
 			Time:              2 * time.Minute,
@@ -122,7 +149,12 @@ func NewServer(app *services.Broker, clock ports.Clock, opts Options) *Server {
 	healthv1.RegisterHealthServer(s, hs)
 	reflection.Register(s)
 
-	return &Server{grpc: s, health: hs, opts: opts}
+	return &Server{grpc: s, health: hs, opts: opts, connections: connections}
+}
+
+// Connections returns the number of currently open client connections.
+func (s *Server) Connections() int64 {
+	return s.connections.Load()
 }
 
 // unaryInterceptor recovers a handler panic as codes.Internal and logs the

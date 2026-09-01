@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/pulse-stream/pulse/internal/application/ports"
@@ -17,15 +18,22 @@ type Publisher struct {
 	clock    ports.Clock
 	logger   ports.Logger
 	metrics  ports.MetricsRecorder
+
+	publishedRecords *atomic.Int64
+	publishedBytes   *atomic.Int64
 }
 
-// NewPublisher builds a Publisher over the given registry.
-func NewPublisher(registry *LogRegistry, clock ports.Clock, logger ports.Logger, metrics ports.MetricsRecorder) *Publisher {
+// NewPublisher builds a Publisher over the given registry. publishedRecords
+// and publishedBytes are the broker-wide Stats counters, incremented
+// alongside metrics on every successful publish.
+func NewPublisher(registry *LogRegistry, clock ports.Clock, logger ports.Logger, metrics ports.MetricsRecorder, publishedRecords, publishedBytes *atomic.Int64) *Publisher {
 	return &Publisher{
-		registry: registry,
-		clock:    clock,
-		logger:   logger,
-		metrics:  metrics,
+		registry:         registry,
+		clock:            clock,
+		logger:           logger,
+		metrics:          metrics,
+		publishedRecords: publishedRecords,
+		publishedBytes:   publishedBytes,
 	}
 }
 
@@ -75,6 +83,8 @@ func (p *Publisher) Publish(ctx context.Context, t topic.Topic, id partition.ID,
 	p.metrics.RecordPublishLatency(time.Since(start))
 	p.metrics.RecordPublish(len(msgs), totalBytes)
 	p.metrics.RecordBytesWritten(int64(totalBytes))
+	p.publishedRecords.Add(int64(len(msgs)))
+	p.publishedBytes.Add(int64(totalBytes))
 
 	offsets := make([]offset.Offset, len(batch.Records))
 	for i, r := range batch.Records {

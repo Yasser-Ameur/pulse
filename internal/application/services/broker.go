@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pulse-stream/pulse/internal/application/ports"
@@ -41,6 +42,35 @@ type Broker struct {
 	// holding gRPC's GracefulStop for the whole grace window.
 	drainCtx    context.Context
 	drainCancel context.CancelCauseFunc
+
+	// Stats counters, snapshotted by Stats(). Incremented at the same call
+	// sites that already invoke MetricsRecorder.
+	subscriptions    atomic.Int64
+	publishedRecords atomic.Int64
+	publishedBytes   atomic.Int64
+	deliveredRecords atomic.Int64
+	deliveredBytes   atomic.Int64
+}
+
+// Stats is a point-in-time snapshot of broker-wide counters, for the monitor
+// HTTP listener's /varz endpoint.
+type Stats struct {
+	Subscriptions    int64
+	PublishedRecords int64
+	PublishedBytes   int64
+	DeliveredRecords int64
+	DeliveredBytes   int64
+}
+
+// Stats returns a snapshot of the broker's counters.
+func (b *Broker) Stats() Stats {
+	return Stats{
+		Subscriptions:    b.subscriptions.Load(),
+		PublishedRecords: b.publishedRecords.Load(),
+		PublishedBytes:   b.publishedBytes.Load(),
+		DeliveredRecords: b.deliveredRecords.Load(),
+		DeliveredBytes:   b.deliveredBytes.Load(),
+	}
 }
 
 // BrokerOptions wires a Broker to its infrastructure.
@@ -68,28 +98,27 @@ type BrokerOptions struct {
 func NewBroker(opts BrokerOptions) *Broker {
 	registry := NewLogRegistry()
 	topics := NewTopicManager(opts.MetadataStore, opts.LogFactory, registry, opts.Clock, opts.Logger)
-	publisher := NewPublisher(registry, opts.Clock, opts.Logger, opts.Metrics)
-	subscriber := NewSubscriber(registry, opts.MetadataStore, SubscriberOptions{
-		ReadLimit:    opts.ReadLimit,
-		ReadMaxBytes: opts.ReadMaxBytes,
-	}, opts.Logger, opts.Metrics)
-	return &Broker{
-		state:      broker.StateStarting,
-		registry:   registry,
-		topics:     topics,
-		publisher:  publisher,
-		subscriber: subscriber,
-		store:      opts.MetadataStore,
-		factory:    opts.LogFactory,
-		clock:      opts.Clock,
-		logger:     opts.Logger,
-		version:    opts.Version,
+	b := &Broker{
+		state:    broker.StateStarting,
+		registry: registry,
+		topics:   topics,
+		store:    opts.MetadataStore,
+		factory:  opts.LogFactory,
+		clock:    opts.Clock,
+		logger:   opts.Logger,
+		version:  opts.Version,
 		identity: broker.Broker{
 			Address: opts.ListenAddr,
 			State:   broker.StateStarting,
 		},
 		retentionInterval: opts.RetentionInterval,
 	}
+	b.publisher = NewPublisher(registry, opts.Clock, opts.Logger, opts.Metrics, &b.publishedRecords, &b.publishedBytes)
+	b.subscriber = NewSubscriber(registry, opts.MetadataStore, SubscriberOptions{
+		ReadLimit:    opts.ReadLimit,
+		ReadMaxBytes: opts.ReadMaxBytes,
+	}, opts.Logger, opts.Metrics, &b.deliveredRecords, &b.deliveredBytes, &b.subscriptions)
+	return b
 }
 
 // Start drives the broker through identity establishment and log recovery into
