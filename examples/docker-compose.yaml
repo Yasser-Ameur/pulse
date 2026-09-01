@@ -1,0 +1,33 @@
+# Pulse broker plus a Prometheus instance scraping its monitor listener.
+# Bring up with: docker compose -f examples/docker-compose.yaml up
+services:
+  pulse:
+    image: ghcr.io/yasser-ameur/pulse:latest
+    ports:
+      - "9090:9090" # gRPC data plane
+      - "9091:9091" # monitor: /healthz, /readyz, /metrics
+    volumes:
+      - pulse-data:/data
+    # environment:
+    #   PULSE_AUTH_TOKENS: ""
+    #   Pulse has no authentication yet (see docs/Guarantees.md); this is a
+    #   placeholder for when ports.Authentication ships, not a working
+    #   setting today.
+    healthcheck:
+      test: ["CMD", "/app/pulse-server", "healthcheck", "--config", "/app/config.yaml"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9092:9090" # host 9092: pulse already owns host 9090
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - pulse
+
+volumes:
+  pulse-data:
