@@ -5,6 +5,7 @@ data-dir: "data"
 log-level: "info"
 development: true
 shutdown-grace: "10s"
+monitor-addr: "127.0.0.1:9091"
 storage:
   segment-max-bytes: 536870912
   index-interval-bytes: 4096

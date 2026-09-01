@@ -35,6 +35,7 @@ func clearEnv(t *testing.T) {
 		"PULSE_MAX_SEND_MSG_SIZE",
 		"PULSE_DEVELOPMENT",
 		"PULSE_SHUTDOWN_GRACE",
+		"PULSE_MONITOR_ADDR",
 		"PULSE_STORAGE_SEGMENT_MAX_BYTES",
 		"PULSE_STORAGE_INDEX_INTERVAL_BYTES",
 		"PULSE_STORAGE_SYNC_MODE",
@@ -93,6 +94,9 @@ func TestDefaultValues(t *testing.T) {
 	}
 	if cfg.Subscribe.ReadMaxBytes != 1<<20 {
 		t.Errorf("Subscribe.ReadMaxBytes = %d, want %d", cfg.Subscribe.ReadMaxBytes, 1<<20)
+	}
+	if cfg.MonitorAddr != DefaultMonitorAddr {
+		t.Errorf("MonitorAddr = %q, want %q", cfg.MonitorAddr, DefaultMonitorAddr)
 	}
 }
 
@@ -317,6 +321,11 @@ func TestLoadEnvOverridesEveryKey(t *testing.T) {
 		{"shutdown-grace", "PULSE_SHUTDOWN_GRACE", "5s", func(t *testing.T, cfg Config) {
 			if cfg.ShutdownGrace.Duration() != 5*time.Second {
 				t.Errorf("ShutdownGrace = %v", cfg.ShutdownGrace.Duration())
+			}
+		}},
+		{"monitor-addr", "PULSE_MONITOR_ADDR", "0.0.0.0:9999", func(t *testing.T, cfg Config) {
+			if cfg.MonitorAddr != "0.0.0.0:9999" {
+				t.Errorf("MonitorAddr = %q", cfg.MonitorAddr)
 			}
 		}},
 		{"storage.segment-max-bytes", "PULSE_STORAGE_SEGMENT_MAX_BYTES", "2048", func(t *testing.T, cfg Config) {

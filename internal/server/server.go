@@ -11,9 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 
 	"github.com/pulse-stream/pulse/internal/application/ports"
 	"github.com/pulse-stream/pulse/internal/application/services"
@@ -21,6 +26,7 @@ import (
 	grpctransport "github.com/pulse-stream/pulse/internal/infrastructure/grpc"
 	"github.com/pulse-stream/pulse/internal/infrastructure/logging"
 	"github.com/pulse-stream/pulse/internal/infrastructure/metrics"
+	"github.com/pulse-stream/pulse/internal/infrastructure/monitor"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/log"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/metadata"
 	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
@@ -40,6 +46,9 @@ func Run(cfg config.Config) error {
 
 	clock := timeutil.SystemClock{}
 	recorder := metrics.NoopRecorder{}
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
@@ -74,6 +83,22 @@ func Run(cfg config.Config) error {
 		return err
 	}
 
+	var monSrv *http.Server
+	if cfg.MonitorAddr != "" {
+		monLn, err := net.Listen("tcp", cfg.MonitorAddr)
+		if err != nil {
+			_ = app.Shutdown(context.Background())
+			return err
+		}
+		startedAt := app.BrokerInfo().StartedAt
+		monSrv = &http.Server{
+			Handler:           monitor.New(app, Version, startedAt, reg),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		logger.Info("monitor server listening", ports.Field{Key: "address", Value: cfg.MonitorAddr})
+		go func() { _ = monSrv.Serve(monLn) }()
+	}
+
 	transport := grpctransport.NewServer(app, clock, grpctransport.Options{
 		MaxRecvMsgSize: cfg.MaxRecvMsgSize,
 		MaxSendMsgSize: cfg.MaxSendMsgSize,
@@ -84,6 +109,9 @@ func Run(cfg config.Config) error {
 
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
+		if monSrv != nil {
+			_ = monSrv.Shutdown(context.Background())
+		}
 		_ = app.Shutdown(context.Background())
 		return err
 	}
@@ -97,6 +125,9 @@ func Run(cfg config.Config) error {
 	select {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, net.ErrClosed) {
+			if monSrv != nil {
+				_ = monSrv.Shutdown(context.Background())
+			}
 			_ = app.Shutdown(context.Background())
 			return err
 		}
@@ -108,6 +139,9 @@ func Run(cfg config.Config) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace.Duration())
 	defer cancel()
 	transport.GracefulStop(shutdownCtx)
+	if monSrv != nil {
+		_ = monSrv.Shutdown(shutdownCtx)
+	}
 	if err := app.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown incomplete", ports.Field{Key: "error", Value: err.Error()})
 		return err
