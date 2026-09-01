@@ -33,6 +33,7 @@ func mapError(err error) error {
 	case errors.Is(err, topic.ErrInvalidName),
 		errors.Is(err, topic.ErrInvalidConfig),
 		errors.Is(err, topic.ErrInvalidPartitionCount),
+		errors.Is(err, topic.ErrReservedName),
 		errors.Is(err, message.ErrInvalidMessage),
 		errors.Is(err, consumer.ErrInvalidName):
 		return status.Error(codes.InvalidArgument, err.Error())

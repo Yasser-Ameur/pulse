@@ -36,6 +36,7 @@ func TestMapError(t *testing.T) {
 		{name: "invalid topic name", in: topic.ErrInvalidName, want: codes.InvalidArgument},
 		{name: "invalid topic config", in: topic.ErrInvalidConfig, want: codes.InvalidArgument},
 		{name: "invalid partition count", in: topic.ErrInvalidPartitionCount, want: codes.InvalidArgument},
+		{name: "reserved topic name", in: topic.ErrReservedName, want: codes.InvalidArgument},
 		{name: "invalid message", in: message.ErrInvalidMessage, want: codes.InvalidArgument},
 		{name: "invalid consumer name", in: consumer.ErrInvalidName, want: codes.InvalidArgument},
 		{name: "topic not found", in: topic.ErrNotFound, want: codes.NotFound},
