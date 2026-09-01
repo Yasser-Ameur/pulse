@@ -49,8 +49,9 @@ func NewRootCmd() *cobra.Command {
 // interrupted; unary commands apply their own bound via unaryContext.
 func Execute() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	if err := NewRootCmd().ExecuteContext(ctx); err != nil {
+	err := NewRootCmd().ExecuteContext(ctx)
+	cancel()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

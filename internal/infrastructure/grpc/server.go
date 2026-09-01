@@ -30,6 +30,9 @@ import (
 // against either pulse.v1 service.
 var healthServiceNames = []string{"", pulsepb.Broker_ServiceDesc.ServiceName, pulsepb.PubSub_ServiceDesc.ServiceName}
 
+// fieldMethod is the log field carrying the full gRPC method name.
+const fieldMethod = "method"
+
 // Options configures the transport server.
 type Options struct {
 	// MaxRecvMsgSize bounds a single incoming request frame.
@@ -118,7 +121,7 @@ func unaryInterceptor(logger ports.Logger) grpc.UnaryServerInterceptor {
 			if r := recover(); r != nil {
 				if logger != nil {
 					logger.Error("rpc panic",
-						ports.Field{Key: "method", Value: info.FullMethod},
+						ports.Field{Key: fieldMethod, Value: info.FullMethod},
 						ports.Field{Key: "panic", Value: r},
 						ports.Field{Key: "stack", Value: string(debug.Stack())},
 					)
@@ -140,7 +143,7 @@ func streamInterceptor(logger ports.Logger) grpc.StreamServerInterceptor {
 			if r := recover(); r != nil {
 				if logger != nil {
 					logger.Error("rpc panic",
-						ports.Field{Key: "method", Value: info.FullMethod},
+						ports.Field{Key: fieldMethod, Value: info.FullMethod},
 						ports.Field{Key: "panic", Value: r},
 						ports.Field{Key: "stack", Value: string(debug.Stack())},
 					)
@@ -159,7 +162,7 @@ func logRPC(logger ports.Logger, method string, err error, d time.Duration) {
 		return
 	}
 	logger.Debug("rpc",
-		ports.Field{Key: "method", Value: method},
+		ports.Field{Key: fieldMethod, Value: method},
 		ports.Field{Key: "code", Value: status.Code(err).String()},
 		ports.Field{Key: "duration", Value: d.String()},
 	)
