@@ -7,7 +7,8 @@ pulse/
 ├── api/                          # Protocol contract source of truth
 │   └── proto/pulse/v1/           #   model.proto, broker.proto, pubsub.proto
 ├── pkg/                          # Public, stable Go packages (exported API)
-│   └── api/pulse/v1/pulsepb/     #   Generated protobuf + gRPC stubs
+│   ├── api/pulse/v1/pulsepb/     #   Generated protobuf + gRPC stubs
+│   └── client/                   #   Public Go client (Dial, Publish, Subscribe, Ack)
 ├── cmd/                          # Executable entrypoints (thin)
 │   ├── pulse-server/             #   Broker process
 │   └── pulse-cli/                #   Command-line client
@@ -16,12 +17,12 @@ pulse/
 │   │   ├── message/              #   Message, Record, RecordBatch, Headers, EventID (ULID)
 │   │   ├── topic/                #   Topic, TopicName, TopicConfig, validation
 │   │   ├── partition/            #   Partition, PartitionID, PartitionState
-│   │   ├── offset/               #   Offset, Position, Cursor semantics
+│   │   ├── offset/               #   Offset semantics
 │   │   ├── broker/               #   Broker, BrokerID, NodeID, ClusterID, BrokerState
 │   │   ├── consumer/             #   ConsumerID, Subscription
 │   │   ├── producer/             #   ProducerID
 │   │   ├── retention/            #   RetentionPolicy
-│   │   ├── storage/              #   Log port interface, RecordBatch container
+│   │   ├── storage/              #   Log port interface
 │   │   └── timeutil/             #   Clock interface
 │   ├── application/              # Use cases + ports. Depends on domain only.
 │   │   ├── ports/                #   MetadataStore, LogFactory, Clock, Logger, MetricsRecorder
@@ -45,8 +46,7 @@ pulse/
 │   │   │   │   ├── snapshot/     #     Durable recovery checkpoints
 │   │   │   │   └── log/          #     Log coordinator
 │   │   │   └── metadata/         #   Metadata plane: PebbleMetadataStore, InMemoryMetadataStore
-│   │   └── grpc/                 #   gRPC server plumbing + internal client
-│   │       └── client/           #     Internal gRPC client used by CLI and tests
+│   │   └── grpc/                 #   gRPC server plumbing (transport, interceptors, TLS)
 │   ├── server/                   # Composition root (the only place layers meet)
 │   └── testutil/                 # In-process broker harness for integration tests
 ├── tests/integration/            # End-to-end tests against a real in-process broker
@@ -63,9 +63,12 @@ pulse/
   Keeping them separate means the protocol can be reviewed as plain text and the
   generated artifacts are plainly regenerable from the `.proto` sources.
 - **`pkg/` is the only public surface**: `pulsepb` is exported so that external
-  SDKs (planned: Go, Python, Java) and integrations can reuse the canonical wire
-  types. Everything else is under `internal/`, which Go enforces as
-  module-private.
+  SDKs (planned: Python, Java) and integrations can reuse the canonical wire
+  types, and `pkg/client` is the first-class Go SDK built on it (see
+  [Client.md](Client.md)). Everything else is under `internal/`, which Go
+  enforces as module-private; `pulse-cli` and the integration tests now dial
+  through `pkg/client` too, so the broker has no remaining internal gRPC
+  client.
 - **`cmd/` stays thin**: binaries do nothing but call the composition root
   (`internal/server`) or the CLI adapter. All logic lives in testable packages.
 - **Strict layering of `internal/`**: `domain → application → adapters` and

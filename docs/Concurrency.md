@@ -12,7 +12,8 @@ obvious ownership. We deliberately avoid speculative parallelism.
 | gRPC server accept loop | `infrastructure/grpc.Server` | Started by `server.Run`, stopped by `GracefulStop`. |
 | Per-RPC handler | gRPC runtime | One per in-flight unary RPC; owned by grpc-go. |
 | Per-subscription reader | gRPC handler goroutine | Runs inline on the RPC handler for `Subscribe`; `services.Subscriber` spawns no goroutine of its own and exits when the stream ends or its context is canceled. |
-| Log data-readiness notification | engine `Log` | None — implemented with channel close/replace (below), no goroutine. |
+| Log data-readiness notification | engine `Log` | None, implemented with channel close/replace (below), no goroutine. |
+| Periodic flush (`startFlusher`) | engine `Log` | One per log opened with `sync-mode: interval`; ticks every `sync-interval` and syncs the active segment. Stopped by closing `stopFlush` on `Close`. |
 
 Pulse does **not** spawn a background writer goroutine per log. Writes happen
 synchronously on the caller (the publish handler) under the log's writer lock,
@@ -83,24 +84,33 @@ slow/full disk, slow transport          │ append blocks → handler blocks →
 
 ## 6. Shutdown sequence
 
-Exactly one documented sequence, driven by `services.Broker.Shutdown(ctx)`:
+Exactly one documented sequence, driven by `server.Run` (`internal/server/server.go`)
+on the first `SIGTERM`/`SIGINT`:
 
-1. Transition `Running → Draining`. The gRPC server stops accepting new RPCs
-   and drains in-flight ones (`GracefulStop` with the configured timeout).
-2. Health status flips to `NOT_SERVING` so load balancers and probes stop
-   routing work.
-3. Transition `Draining → Stopping`.
-4. In-flight `Subscribe` streams are not canceled directly; they end when
-   `GracefulStop` finishes draining them within the grace timeout, or when the
-   timeout expires and `Stop()` force-closes them. A drain that cancels
-   followers explicitly is not implemented today.
-5. Every open log is `Sync`ed (final durability flush) then `Close`d.
-6. The metadata store is closed (Pebble flushes its WAL).
-7. Transition `Stopping → Stopped`; the process may exit.
+1. `recorder.SetUp(false)` marks `pulse_up` down immediately.
+2. `app.Drain()` (`services.Broker`) transitions `Running → Draining`: new
+   publish/subscribe/ack calls start returning `broker.ErrDraining`, and every
+   live `Subscribe` stream is canceled immediately through its `drainCtx`, so
+   followers do not hold up the next step.
+3. `transport.GracefulStop(shutdownCtx)` (`infrastructure/grpc.Server`) flips
+   the gRPC health service to `NOT_SERVING`, then calls `grpc.Server.
+   GracefulStop()` to drain in-flight unary RPCs within the `shutdown-grace`
+   window; a second signal cancels `shutdownCtx` early and `Stop()`
+   force-closes them.
+4. `app.Shutdown(shutdownCtx)` (`services.Broker`) drains again (idempotent),
+   transitions `Draining → Stopping`, stops the retention sweeper, `Sync`s
+   then `Close`s every open log, and closes the metadata store (Pebble
+   flushes its WAL). It ends in `Stopped`.
+5. The monitor HTTP listener is shut down last, after step 4, so `/healthz`
+   and `/readyz` keep answering through drain and flush instead of refusing
+   the connection early.
 
-If the graceful deadline expires, `Stop()` force-closes remaining RPCs and
-proceeds to steps 4–6; data safety is unaffected because fsync-before-close
-always runs.
+`services.Broker.Shutdown` alone performs only the storage half (steps 2 and
+4 above minus the transport calls); it is `server.Run` that sequences it
+against `Drain` and `GracefulStop` in the order that keeps followers from
+holding up the grace window. If the graceful deadline expires, `Stop()`
+force-closes remaining RPCs and the sequence proceeds; data safety is
+unaffected because fsync-before-close always runs.
 
 ## 7. Determinism
 
@@ -117,6 +127,8 @@ always runs.
   single-writer mutex is provably correct and measurable; if benchmarks show it
   is the bottleneck, the documented upgrade path is sharded append queues, not
   a redesign.
-- No background batching/flush goroutines for the log in Phase 1 (the fsync
-  policy is synchronous or timer-driven at the storage layer only).
+- No background batching goroutines for appends: every batch is appended
+  synchronously on the caller. The one background flush goroutine that does
+  exist, `startFlusher` (§1), only runs the periodic fsync for
+  `sync-mode: interval`; it never buffers or reorders writes.
 - No work queues with unbounded capacity anywhere.

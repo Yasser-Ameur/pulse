@@ -277,6 +277,7 @@ allocation-friendly.
 ## 10. Filesystem responsibilities
 
 `infrastructure/storage/filesystem` owns: path construction, safe file open
-flags (O_APPEND|O_CREATE, no O_TRUNC for data files), segment naming, and the
-few durability helpers (fsync, atomic index rebuild via temp file + rename).
+flags (O_CREATE|O_RDWR, no O_TRUNC for data files, so a reopened log never
+loses its tail), segment naming, and the few durability helpers (fsync,
+atomic index rebuild via temp file + rename).
 All other storage packages treat files as abstract byte streams.

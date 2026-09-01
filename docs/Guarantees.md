@@ -186,9 +186,10 @@ That is a design decision with a cost, and it is the user's to make. Until then
 the honest statement is: *Pulse does not guarantee that a delivered record is
 durable at the moment it is delivered.*
 
-`docs/Architecture.md` claims the `partition` package "owns LEO/HW rules". It
-does not — `internal/domain/partition` contains an id and a lifecycle state and
-nothing else. The claim describes an intended design, not the code.
+`internal/domain/partition` contains only an id and a lifecycle state; it owns
+no LEO/HW (log-end-offset/high-watermark) rules. Nothing in the current
+codebase claims otherwise. That distinction is an intended design for a
+future replicated partition, not a gap in today's single-copy log.
 
 ## 8. What this does not give you
 

@@ -133,9 +133,13 @@ not found: orders`). No stack traces are leaked to clients.
   `internal/infrastructure/config`).
 - Max receive/send message sizes are configurable and default to 64 MiB so
   batches are not artificially limited by transport.
-- TLS is not enabled in Phase 1. The internal client's `Dial` accepts extra
-  `grpc.DialOption`s, so a caller can pass credentials today; the server has no
-  equivalent credentials seam yet.
-- The internal client (`internal/infrastructure/grpc/client`) exposes the
-  stream via a callback `func(record) error` so the CLI and tests share one
-  consumption path.
+- TLS is available and off by default. The server takes `grpc.Creds(credentials.
+  NewTLS(tlsConfig))` when `tls.cert-file`/`tls.key-file` are set, with
+  `tls.client-ca-file` enabling mTLS (`internal/infrastructure/grpc/server.go`,
+  `internal/server/server.go`). The public client dials with the same
+  credentials via `client.WithTLS` (`pkg/client/client.go`). See
+  [Configuration.md](Configuration.md) and [Client.md](Client.md).
+- `pkg/client` (the public Go client) exposes the `Subscribe` stream via a
+  callback `func(Record) error`, so the CLI and tests share one consumption
+  path; it also retries `Publish` and, with `Follow: true`, `Subscribe` on a
+  transient `Unavailable`.
