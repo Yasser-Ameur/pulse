@@ -13,6 +13,9 @@ import (
 // started here with testutil for a self-contained, compilable example. It
 // carries no "Output:" comment, so go test compiles it but does not run it;
 // a real caller dials whatever address its broker is actually listening on.
+// A broker that requires auth would add client.WithToken(token) here; a
+// topic with several partitions would route with client.PartitionForKey
+// instead of the fixed partition 0 used below.
 func Example() {
 	inst := testutil.Start(new(testing.T), testutil.Options{})
 

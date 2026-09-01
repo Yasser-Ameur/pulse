@@ -3,6 +3,10 @@
 // any external Go program can depend on it without importing anything under
 // github.com/pulse-stream/pulse/internal.
 //
+// Dial with WithToken to authenticate against a broker that requires it, and
+// call PartitionForKey to route a message to the same partition as every
+// other message sharing its key on a multi-partition topic.
+//
 // # At-least-once delivery
 //
 // Pulse delivers every record at least once: a crash or a resumed Subscribe
