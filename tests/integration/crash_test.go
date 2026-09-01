@@ -17,14 +17,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/message"
 	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/index"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/snapshot"
 	"github.com/pulse-stream/pulse/internal/testutil"
+	"github.com/pulse-stream/pulse/pkg/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,7 +39,7 @@ import (
 // recovered in full.
 func TestCrashAtAnyPointRecovery(t *testing.T) {
 	dir := t.TempDir()
-	name := mustTopic(t, "crash")
+	const name = "crash"
 	ctx := context.Background()
 
 	// A small index interval yields several batch boundaries per segment, so
@@ -51,7 +48,7 @@ func TestCrashAtAnyPointRecovery(t *testing.T) {
 
 	// reference is the broker's authoritative log after this round's publish.
 	// recovered is what the previous restart recovered (a prefix of reference).
-	var reference, recovered []message.Record
+	var reference, recovered []client.Record
 	topicCreated := false
 
 	inst := testutil.Start(t, startOpts())
@@ -60,26 +57,26 @@ func TestCrashAtAnyPointRecovery(t *testing.T) {
 	const rounds = 7
 	for round := 0; round < rounds; round++ {
 		if !topicCreated {
-			_, err := c.CreateTopic(ctx, "crash", topic.DefaultConfig(), 1)
+			_, err := c.CreateTopic(ctx, name, client.TopicConfig{Partitions: 1})
 			require.NoError(t, err)
 			topicCreated = true
 		}
 
-		msgs := make([]message.Message, 0, 6)
+		msgs := make([]client.Message, 0, 6)
 		for i := 0; i < 6; i++ {
-			msgs = append(msgs, message.Message{
+			msgs = append(msgs, client.Message{
 				Key:         "k",
 				Payload:     []byte(fmt.Sprintf("r%d-%d", round, i)),
 				ContentType: "text/plain",
 			})
 		}
-		offs, err := c.Publish(ctx, name, partition.ID(0), msgs)
+		offs, err := c.Publish(ctx, name, 0, msgs...)
 		require.NoError(t, err)
 		require.Len(t, offs, len(msgs))
-		require.Equal(t, offset.Offset(len(recovered)), offs[0], "round %d first offset", round)
+		require.Equal(t, int64(len(recovered)), offs[0], "round %d first offset", round)
 
 		// Capture the broker's authoritative log into the reference model.
-		reference = consume(t, c, consumer.Subscription{Topic: name, Partition: partition.ID(0)})
+		reference = consume(t, c, name, 0, client.SubscribeOptions{})
 		require.Len(t, reference, len(recovered)+len(msgs), "round %d reference length", round)
 
 		// Graceful stop first: the close writes a valid snapshot, which the
@@ -92,14 +89,14 @@ func TestCrashAtAnyPointRecovery(t *testing.T) {
 		case 1:
 			rewindCheckpointAndTornTail(t, dir, name)
 		case 2:
-			removeSnapshots(t, dir)
+			removeSnapshots(t, dir, name)
 			tornTail(t, dir, name)
 		}
 
 		// Restart and verify recovery against the reference model.
 		inst = testutil.Start(t, startOpts())
 		c = dial(t, inst)
-		recovered = consume(t, c, consumer.Subscription{Topic: name, Partition: partition.ID(0)})
+		recovered = consume(t, c, name, 0, client.SubscribeOptions{})
 		require.True(t, len(recovered) <= len(reference),
 			"round %d recovered %d records, want <= %d", round, len(recovered), len(reference))
 		requirePrefix(t, reference, recovered)
@@ -114,7 +111,7 @@ func TestCrashAtAnyPointRecovery(t *testing.T) {
 
 // requirePrefix asserts got is a prefix of want with identical payloads and
 // timestamps.
-func requirePrefix(t *testing.T, want, got []message.Record) {
+func requirePrefix(t *testing.T, want, got []client.Record) {
 	t.Helper()
 	for i := range got {
 		w, g := want[i], got[i]
@@ -127,19 +124,19 @@ func requirePrefix(t *testing.T, want, got []message.Record) {
 }
 
 // requireContiguous asserts the recovered offsets start at zero with no gaps.
-func requireContiguous(t *testing.T, got []message.Record) {
+func requireContiguous(t *testing.T, got []client.Record) {
 	t.Helper()
 	for i, r := range got {
-		require.Equal(t, int64(i), r.Offset.Int64(), "offset %d", r.Offset)
+		require.Equal(t, int64(i), r.Offset, "offset %d", r.Offset)
 	}
 }
 
-func partitionDir(dir string, name topic.Name, id partition.ID) string {
-	return filepath.Join(dir, "topics", name.String(), strconv.Itoa(int(id)))
+func partitionDir(dir string, name string, id int32) string {
+	return filepath.Join(dir, "topics", name, strconv.Itoa(int(id)))
 }
 
 // segmentFiles returns the partition's .log files sorted by segment name.
-func segmentFiles(t *testing.T, dir string, name topic.Name) []string {
+func segmentFiles(t *testing.T, dir string, name string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(partitionDir(dir, name, 0))
 	require.NoError(t, err)
@@ -154,7 +151,7 @@ func segmentFiles(t *testing.T, dir string, name topic.Name) []string {
 	return files
 }
 
-func activeSegmentFile(t *testing.T, dir string, name topic.Name) string {
+func activeSegmentFile(t *testing.T, dir string, name string) string {
 	t.Helper()
 	files := segmentFiles(t, dir, name)
 	require.NotEmpty(t, files, "no segment files to truncate")
@@ -173,14 +170,14 @@ func truncateFile(t *testing.T, path string, size int64) {
 
 // removeSnapshots deletes every partition checkpoint so startup must fall back
 // to a full scan.
-func removeSnapshots(t *testing.T, dir string) {
+func removeSnapshots(t *testing.T, dir string, name string) {
 	t.Helper()
-	require.NoError(t, os.Remove(snapshot.Path(partitionDir(dir, mustTopic(t, "crash"), 0))))
+	require.NoError(t, os.Remove(snapshot.Path(partitionDir(dir, name, 0))))
 }
 
 // tornTail truncates the active segment to a random size, simulating a crash
 // mid-append.
-func tornTail(t *testing.T, dir string, name topic.Name) {
+func tornTail(t *testing.T, dir string, name string) {
 	t.Helper()
 	path := activeSegmentFile(t, dir, name)
 	fi, err := os.Stat(path)
@@ -195,7 +192,7 @@ func tornTail(t *testing.T, dir string, name topic.Name) {
 // batch boundary (real checkpoints always sit on a batch boundary) so recovery
 // must trust the durable prefix and scan only the delta tail, which is then
 // truncated at a random point — possibly mid-batch.
-func rewindCheckpointAndTornTail(t *testing.T, dir string, name topic.Name) {
+func rewindCheckpointAndTornTail(t *testing.T, dir string, name string) {
 	t.Helper()
 	pdir := partitionDir(dir, name, 0)
 	path := activeSegmentFile(t, dir, name)

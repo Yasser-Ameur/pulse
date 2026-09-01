@@ -12,21 +12,19 @@ import (
 	"time"
 
 	"github.com/pulse-stream/pulse/internal/application/services"
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
 	grpctransport "github.com/pulse-stream/pulse/internal/infrastructure/grpc"
-	"github.com/pulse-stream/pulse/internal/infrastructure/grpc/client"
 	"github.com/pulse-stream/pulse/internal/infrastructure/logging"
 	"github.com/pulse-stream/pulse/internal/infrastructure/metrics"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/log"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/metadata"
 	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
 	"github.com/pulse-stream/pulse/internal/testutil"
+	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/pulse-stream/pulse/pkg/client"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -40,34 +38,26 @@ func dial(t *testing.T, inst *testutil.Instance) *client.Client {
 	return c
 }
 
-func mustTopic(t *testing.T, s string) topic.Name {
-	t.Helper()
-	n, err := topic.NewName(s)
-	require.NoError(t, err)
-	return n
-}
-
 func TestPublishConsumeAckResume(t *testing.T) {
 	inst := testutil.Start(t, testutil.Options{})
 	c := dial(t, inst)
 	ctx := context.Background()
 
-	tp, err := c.CreateTopic(ctx, "orders", topic.DefaultConfig(), 1)
+	tp, err := c.CreateTopic(ctx, "orders", client.TopicConfig{Partitions: 1})
 	require.NoError(t, err)
-	require.Equal(t, topic.Name("orders"), tp.Name)
+	require.Equal(t, "orders", tp.Name)
 
-	name := mustTopic(t, "orders")
-	msgs := []message.Message{
+	msgs := []client.Message{
 		{Key: "a", Payload: []byte("one"), ContentType: "text/plain"},
 		{Key: "b", Payload: []byte("two")},
 		{Key: "c", Payload: []byte("three")},
 	}
-	offs, err := c.Publish(ctx, name, partition.ID(0), msgs)
+	offs, err := c.Publish(ctx, "orders", 0, msgs...)
 	require.NoError(t, err)
-	require.Equal(t, []offset.Offset{0, 1, 2}, offs)
+	require.Equal(t, []int64{0, 1, 2}, offs)
 
 	// Replay from the start sees every message in order.
-	got := consume(t, c, consumer.Subscription{Topic: name, Partition: partition.ID(0)})
+	got := consume(t, c, "orders", 0, client.SubscribeOptions{})
 	require.Len(t, got, 3)
 	for i, want := range []string{"one", "two", "three"} {
 		require.Equal(t, want, string(got[i].Message.Payload), "offset %d", got[i].Offset)
@@ -75,11 +65,11 @@ func TestPublishConsumeAckResume(t *testing.T) {
 
 	// Ack to offset 1; the stored cursor is the next offset to consume
 	// (Protocol.md §Cursor resume), so a fresh subscription resumes at 1.
-	cursor, err := c.Ack(ctx, consumerA, name, partition.ID(0), offset.Offset(1))
+	cursor, err := c.Ack(ctx, consumerA, "orders", 0, 1)
 	require.NoError(t, err)
-	require.Equal(t, offset.Offset(1), cursor)
+	require.Equal(t, int64(1), cursor)
 
-	got = consume(t, c, consumer.Subscription{Consumer: consumerA, Topic: name, Partition: partition.ID(0)})
+	got = consume(t, c, "orders", 0, client.SubscribeOptions{Consumer: consumerA})
 	require.Len(t, got, 2)
 	require.Equal(t, "two", string(got[0].Message.Payload))
 	require.Equal(t, "three", string(got[1].Message.Payload))
@@ -90,12 +80,11 @@ func TestDurabilityAcrossRestart(t *testing.T) {
 	c := dial(t, inst)
 	ctx := context.Background()
 
-	_, err := c.CreateTopic(ctx, "events", topic.DefaultConfig(), 1)
+	_, err := c.CreateTopic(ctx, "events", client.TopicConfig{Partitions: 1})
 	require.NoError(t, err)
 
-	name := mustTopic(t, "events")
 	for i := 0; i < 5; i++ {
-		_, err := c.Publish(ctx, name, partition.ID(0), []message.Message{{Payload: []byte(fmt.Sprintf("m%d", i))}})
+		_, err := c.Publish(ctx, "events", 0, client.Message{Payload: []byte(fmt.Sprintf("m%d", i))})
 		require.NoError(t, err)
 	}
 
@@ -103,14 +92,14 @@ func TestDurabilityAcrossRestart(t *testing.T) {
 	inst = inst.Restart(t)
 	c = dial(t, inst)
 
-	info, err := c.BrokerInfo(ctx)
+	info, err := c.Info(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "running", info.State.String())
+	require.Equal(t, "running", info.State)
 
-	got := consume(t, c, consumer.Subscription{Topic: name, Partition: partition.ID(0)})
+	got := consume(t, c, "events", 0, client.SubscribeOptions{})
 	require.Len(t, got, 5)
 	for i, r := range got {
-		require.Equal(t, int64(i), r.Offset.Int64())
+		require.Equal(t, int64(i), r.Offset)
 		require.Equal(t, fmt.Sprintf("m%d", i), string(r.Message.Payload))
 	}
 }
@@ -120,29 +109,28 @@ func TestFollowStreamsLiveMessages(t *testing.T) {
 	c := dial(t, inst)
 	ctx := context.Background()
 
-	_, err := c.CreateTopic(ctx, "tail", topic.DefaultConfig(), 1)
+	_, err := c.CreateTopic(ctx, "tail", client.TopicConfig{Partitions: 1})
 	require.NoError(t, err)
-	name := mustTopic(t, "tail")
 
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	recv := make(chan message.Record, 16)
+	recv := make(chan client.Record, 16)
 	subErr := make(chan error, 1)
 	go func() {
-		subErr <- c.Subscribe(subCtx, consumer.Subscription{Topic: name, Partition: partition.ID(0), Follow: true},
-			func(r message.Record) error { recv <- r; return nil })
+		subErr <- c.Subscribe(subCtx, "tail", 0, client.SubscribeOptions{Follow: true},
+			func(r client.Record) error { recv <- r; return nil })
 	}()
 
 	// The subscriber must first catch up to the log end (empty here), then
 	// receive the live publish.
 	time.Sleep(200 * time.Millisecond)
-	_, err = c.Publish(ctx, name, partition.ID(0), []message.Message{{Payload: []byte("live")}})
+	_, err = c.Publish(ctx, "tail", 0, client.Message{Payload: []byte("live")})
 	require.NoError(t, err)
 
 	select {
 	case r := <-recv:
 		require.Equal(t, "live", string(r.Message.Payload))
-		require.Equal(t, offset.Offset(0), r.Offset)
+		require.Equal(t, int64(0), r.Offset)
 	case err := <-subErr:
 		t.Fatalf("subscribe failed: %v", err)
 	case <-time.After(5 * time.Second):
@@ -201,14 +189,28 @@ func TestShutdownCancelsFollowerImmediately(t *testing.T) {
 	t.Cleanup(func() { _ = c.Close() })
 
 	ctx := context.Background()
-	_, err = c.CreateTopic(ctx, "drain", topic.DefaultConfig(), 1)
+	_, err = c.CreateTopic(ctx, "drain", client.TopicConfig{Partitions: 1})
 	require.NoError(t, err)
-	name := mustTopic(t, "drain")
+
+	// This step observes the raw pulsepb stream directly rather than through
+	// pkg/client.Subscribe: pkg/client now resumes a Follow stream on
+	// codes.Unavailable, which would hide the very signal this test pins.
+	rawConn, err := grpc.NewClient(ln.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rawConn.Close() })
+	stream, err := pulsepb.NewPubSubClient(rawConn).Subscribe(context.Background(), &pulsepb.SubscribeRequest{
+		Topic: "drain", Follow: true,
+	})
+	require.NoError(t, err)
 
 	subErr := make(chan error, 1)
 	go func() {
-		subErr <- c.Subscribe(context.Background(), consumer.Subscription{Topic: name, Partition: partition.ID(0), Follow: true},
-			func(message.Record) error { return nil })
+		for {
+			if _, err := stream.Recv(); err != nil {
+				subErr <- err
+				return
+			}
+		}
 	}()
 	time.Sleep(200 * time.Millisecond) // let the follower reach its blocking wait
 
@@ -231,9 +233,8 @@ func TestConcurrentProducers(t *testing.T) {
 	c := dial(t, inst)
 	ctx := context.Background()
 
-	_, err := c.CreateTopic(ctx, "race", topic.DefaultConfig(), 1)
+	_, err := c.CreateTopic(ctx, "race", client.TopicConfig{Partitions: 1})
 	require.NoError(t, err)
-	name := mustTopic(t, "race")
 
 	const (
 		producers   = 8
@@ -253,9 +254,9 @@ func TestConcurrentProducers(t *testing.T) {
 			}
 			defer func() { _ = cc.Close() }()
 			for i := 0; i < perProducer; i++ {
-				if _, err := cc.Publish(ctx, name, partition.ID(0), []message.Message{{
+				if _, err := cc.Publish(ctx, "race", 0, client.Message{
 					Payload: []byte(fmt.Sprintf("p%d-%d", id, i)),
-				}}); err != nil {
+				}); err != nil {
 					errCh <- err
 					return
 				}
@@ -268,12 +269,12 @@ func TestConcurrentProducers(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 
-	got := consume(t, c, consumer.Subscription{Topic: name, Partition: partition.ID(0)})
+	got := consume(t, c, "race", 0, client.SubscribeOptions{})
 	require.Len(t, got, producers*perProducer)
 	seen := make(map[int64]bool, len(got))
 	for _, r := range got {
-		require.False(t, seen[r.Offset.Int64()], "duplicate offset %d", r.Offset)
-		seen[r.Offset.Int64()] = true
+		require.False(t, seen[r.Offset], "duplicate offset %d", r.Offset)
+		seen[r.Offset] = true
 	}
 	// Every producer's messages are present exactly once.
 	payloads := make(map[string]int)
@@ -287,10 +288,10 @@ func TestConcurrentProducers(t *testing.T) {
 }
 
 // consume replays a non-follow subscription, collecting all records.
-func consume(t *testing.T, c *client.Client, sub consumer.Subscription) []message.Record {
+func consume(t *testing.T, c *client.Client, topic string, partition int32, opts client.SubscribeOptions) []client.Record {
 	t.Helper()
-	var got []message.Record
-	err := c.Subscribe(context.Background(), sub, func(r message.Record) error {
+	var got []client.Record
+	err := c.Subscribe(context.Background(), topic, partition, opts, func(r client.Record) error {
 		got = append(got, r)
 		return nil
 	})
