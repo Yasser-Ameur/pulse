@@ -22,30 +22,17 @@ type statusResponse struct {
 	Status string `json:"status"`
 }
 
-// partitionVarz is one partition entry in the /varz topics list.
-type partitionVarz struct {
-	ID          int   `json:"id"`
-	StartOffset int64 `json:"start_offset"`
-	EndOffset   int64 `json:"end_offset"`
-}
-
-// topicVarz is one topic entry in the /varz topics list.
-type topicVarz struct {
-	Name       string          `json:"name"`
-	Partitions []partitionVarz `json:"partitions"`
-}
-
 // varzResponse is the body of /varz.
 type varzResponse struct {
-	Version       string      `json:"version"`
-	BrokerID      string      `json:"broker_id"`
-	ClusterID     string      `json:"cluster_id"`
-	State         string      `json:"state"`
-	UptimeSeconds float64     `json:"uptime_seconds"`
-	StartedAt     time.Time   `json:"started_at"`
-	Topics        []topicVarz `json:"topics"`
-	GoVersion     string      `json:"go_version"`
-	NumGoroutine  int         `json:"num_goroutine"`
+	Version       string               `json:"version"`
+	BrokerID      string               `json:"broker_id"`
+	ClusterID     string               `json:"cluster_id"`
+	State         string               `json:"state"`
+	UptimeSeconds float64              `json:"uptime_seconds"`
+	StartedAt     time.Time            `json:"started_at"`
+	Topics        []services.TopicView `json:"topics"`
+	GoVersion     string               `json:"go_version"`
+	NumGoroutine  int                  `json:"num_goroutine"`
 }
 
 // New builds the monitor HTTP handler for broker b, reporting version and
@@ -77,15 +64,6 @@ func New(b *services.Broker, version string, startedAt time.Time, reg prometheus
 
 	mux.HandleFunc("/varz", func(w http.ResponseWriter, _ *http.Request) {
 		info := b.BrokerInfo()
-		views := b.TopicsView()
-		topics := make([]topicVarz, 0, len(views))
-		for _, t := range views {
-			partitions := make([]partitionVarz, 0, len(t.Partitions))
-			for _, p := range t.Partitions {
-				partitions = append(partitions, partitionVarz{ID: p.ID, StartOffset: p.StartOffset, EndOffset: p.EndOffset})
-			}
-			topics = append(topics, topicVarz{Name: t.Name, Partitions: partitions})
-		}
 		resp := varzResponse{
 			Version:       version,
 			BrokerID:      string(info.BrokerID),
@@ -93,7 +71,7 @@ func New(b *services.Broker, version string, startedAt time.Time, reg prometheus
 			State:         info.State.String(),
 			UptimeSeconds: time.Since(startedAt).Seconds(),
 			StartedAt:     startedAt,
-			Topics:        topics,
+			Topics:        b.TopicsView(),
 			GoVersion:     runtime.Version(),
 			NumGoroutine:  runtime.NumGoroutine(),
 		}
