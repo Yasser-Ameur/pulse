@@ -45,10 +45,11 @@ func Run(cfg config.Config) error {
 	defer func() { _ = logger.Sync() }()
 
 	clock := timeutil.SystemClock{}
-	recorder := metrics.NoopRecorder{}
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	metrics.RegisterBrokerInfo(reg, Version)
+	recorder := metrics.NewPrometheusRecorder(reg)
 
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
@@ -82,6 +83,7 @@ func Run(cfg config.Config) error {
 		_ = meta.Close()
 		return err
 	}
+	recorder.SetUp(true)
 
 	var monSrv *http.Server
 	if cfg.MonitorAddr != "" {
@@ -136,6 +138,7 @@ func Run(cfg config.Config) error {
 		logger.Info("shutdown signal received")
 	}
 
+	recorder.SetUp(false)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace.Duration())
 	defer cancel()
 	transport.GracefulStop(shutdownCtx)
