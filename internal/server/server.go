@@ -88,6 +88,14 @@ func Run(cfg config.Config) error {
 	recorder.SetUp(true)
 
 	var monSrv *http.Server
+	// Resolve TLS before any listener opens so a bad certificate fails fast
+	// without leaving the monitor server running.
+	tlsConfig, err := buildTLSConfig(cfg.TLS)
+	if err != nil {
+		_ = app.Shutdown(context.Background())
+		return err
+	}
+
 	if cfg.MonitorAddr != "" {
 		monLn, err := net.Listen("tcp", cfg.MonitorAddr)
 		if err != nil {
@@ -98,15 +106,12 @@ func Run(cfg config.Config) error {
 		monSrv = &http.Server{
 			Handler:           monitor.New(app, Version, startedAt, reg),
 			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		}
 		logger.Info("monitor server listening", ports.Field{Key: "address", Value: cfg.MonitorAddr})
 		go func() { _ = monSrv.Serve(monLn) }()
-	}
-
-	tlsConfig, err := buildTLSConfig(cfg.TLS)
-	if err != nil {
-		_ = app.Shutdown(context.Background())
-		return err
 	}
 
 	transport := grpctransport.NewServer(app, clock, grpctransport.Options{
