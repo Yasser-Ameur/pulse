@@ -18,7 +18,7 @@ func newInfoCmd(opts *Options) *cobra.Command {
 				return err
 			}
 			defer func() { _ = c.Close() }()
-			b, err := c.BrokerInfo(ctx)
+			b, err := c.Info(ctx)
 			if err != nil {
 				return err
 			}

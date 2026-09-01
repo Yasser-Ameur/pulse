@@ -7,11 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
 	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/pulse-stream/pulse/pkg/client"
 	"github.com/spf13/cobra"
 )
 
@@ -46,11 +43,11 @@ func newPublishCmd(opts *Options) *cobra.Command {
 				}
 				body = string(data)
 			}
-			offsets, err := c.Publish(ctx, name, partition.ID(partitionID), []message.Message{{
+			offsets, err := c.Publish(ctx, name.String(), int32(partitionID), client.Message{
 				Key:         key,
 				Payload:     []byte(body),
 				ContentType: contentType,
-			}})
+			})
 			if err != nil {
 				return err
 			}
@@ -87,15 +84,12 @@ func newSubscribeCmd(opts *Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sub := consumer.Subscription{
-				Consumer:  consumer.ID(consumerID),
-				Topic:     name,
-				Partition: partition.ID(partitionID),
-				Follow:    follow,
+			subOpts := client.SubscribeOptions{
+				Consumer: consumerID,
+				Follow:   follow,
 			}
 			if cmd.Flags().Changed("from") {
-				o := offset.Offset(from)
-				sub.Start = &o
+				subOpts.StartOffset = &from
 			}
 			ctx := cmd.Context()
 			if forever {
@@ -103,11 +97,11 @@ func newSubscribeCmd(opts *Options) *cobra.Command {
 				ctx, cancel = context.WithCancel(ctx)
 				defer cancel()
 			}
-			emit := func(r message.Record) error {
+			emit := func(r client.Record) error {
 				fmt.Printf("%d\t%s\t%s\n", r.Offset, r.Timestamp.Format(time.RFC3339), r.Message.Payload)
 				return nil
 			}
-			return c.Subscribe(ctx, sub, emit)
+			return c.Subscribe(ctx, name.String(), int32(partitionID), subOpts, emit)
 		},
 	}
 	cmd.Flags().IntVar(&partitionID, "partition", 0, "partition to read")
@@ -140,7 +134,7 @@ func newAckCmd(opts *Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cursor, err := c.Ack(ctx, consumer.ID(consumerID), name, partition.ID(partitionID), offset.Offset(at))
+			cursor, err := c.Ack(ctx, consumerID, name.String(), int32(partitionID), at)
 			if err != nil {
 				return err
 			}

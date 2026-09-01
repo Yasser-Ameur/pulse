@@ -1,17 +1,18 @@
 // Package cli implements the pulse-cli: a small administrative client over the
-// pulse.v1 gRPC protocol (docs/Protocol.md). It shares the domain model with
-// the broker through the internal gRPC client.
+// pulse.v1 gRPC protocol (docs/Protocol.md). It uses the public pkg/client.
 package cli
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/infrastructure/grpc/client"
+	"github.com/pulse-stream/pulse/pkg/client"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,11 @@ const unaryTimeout = 30 * time.Second
 // Options carries the shared CLI flags.
 type Options struct {
 	Addr string
+
+	TLSCA         string
+	TLSCert       string
+	TLSKey        string
+	TLSSkipVerify bool
 }
 
 // NewRootCmd builds the pulse-cli command tree.
@@ -34,6 +40,10 @@ func NewRootCmd() *cobra.Command {
 		Short: "Pulse broker command-line client",
 	}
 	root.PersistentFlags().StringVar(&opts.Addr, "addr", defaultAddr, "broker address")
+	root.PersistentFlags().StringVar(&opts.TLSCA, "tls-ca", "", "trust this CA certificate file; its presence enables TLS")
+	root.PersistentFlags().StringVar(&opts.TLSCert, "tls-cert", "", "client certificate file for mTLS")
+	root.PersistentFlags().StringVar(&opts.TLSKey, "tls-key", "", "client key file for mTLS")
+	root.PersistentFlags().BoolVar(&opts.TLSSkipVerify, "tls-skip-verify", false, "skip server certificate verification (dev only)")
 	root.AddCommand(
 		newInfoCmd(opts),
 		newTopicsCmd(opts),
@@ -65,7 +75,15 @@ func unaryContext(cmd *cobra.Command) (context.Context, context.CancelFunc) {
 
 // connect dials the broker for the command duration.
 func connect(opts *Options, ctx context.Context) (*client.Client, error) {
-	c, err := client.Dial(opts.Addr)
+	tlsConfig, err := buildTLSConfig(opts)
+	if err != nil {
+		return nil, err
+	}
+	var dialOpts []client.Option
+	if tlsConfig != nil {
+		dialOpts = append(dialOpts, client.WithTLS(tlsConfig))
+	}
+	c, err := client.Dial(opts.Addr, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", opts.Addr, err)
 	}
@@ -74,4 +92,33 @@ func connect(opts *Options, ctx context.Context) (*client.Client, error) {
 		_ = c.Close()
 	}()
 	return c, nil
+}
+
+// buildTLSConfig builds the client TLS config from the --tls-* flags. It
+// returns nil, meaning plaintext, when neither a CA nor --tls-skip-verify was
+// given.
+func buildTLSConfig(opts *Options) (*tls.Config, error) {
+	if opts.TLSCA == "" && !opts.TLSSkipVerify {
+		return nil, nil
+	}
+	cfg := &tls.Config{InsecureSkipVerify: opts.TLSSkipVerify}
+	if opts.TLSCA != "" {
+		pem, err := os.ReadFile(opts.TLSCA)
+		if err != nil {
+			return nil, fmt.Errorf("read --tls-ca: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("--tls-ca %s: no certificates found", opts.TLSCA)
+		}
+		cfg.RootCAs = pool
+	}
+	if opts.TLSCert != "" || opts.TLSKey != "" {
+		cert, err := tls.LoadX509KeyPair(opts.TLSCert, opts.TLSKey)
+		if err != nil {
+			return nil, fmt.Errorf("load --tls-cert/--tls-key: %w", err)
+		}
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+	return cfg, nil
 }

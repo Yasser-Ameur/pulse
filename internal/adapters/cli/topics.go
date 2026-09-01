@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/pulse-stream/pulse/pkg/client"
 	"github.com/spf13/cobra"
 )
 
@@ -34,11 +34,11 @@ func newTopicsCreateCmd(opts *Options) *cobra.Command {
 				return err
 			}
 			defer func() { _ = c.Close() }()
-			t, err := c.CreateTopic(ctx, args[0], topic.DefaultConfig(), partitions)
+			t, err := c.CreateTopic(ctx, args[0], client.TopicConfig{Partitions: partitions})
 			if err != nil {
 				return err
 			}
-			fmt.Printf("created topic %s (%d partitions)\n", t.Name, t.Partitions)
+			fmt.Printf("created topic %s (%d partitions)\n", t.Name, t.Config.Partitions)
 			return nil
 		},
 	}
@@ -63,7 +63,7 @@ func newTopicsListCmd(opts *Options) *cobra.Command {
 				return err
 			}
 			for _, t := range topics {
-				fmt.Printf("%s\tpartitions=%d\n", t.Name, t.Partitions)
+				fmt.Printf("%s\tpartitions=%d\n", t.Name, t.Config.Partitions)
 			}
 			return nil
 		},
