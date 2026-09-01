@@ -1,6 +1,7 @@
 package client
 
 import (
+	"strings"
 	"time"
 
 	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
@@ -68,20 +69,5 @@ func fromPBTopic(pb *pulsepb.Topic) Topic {
 
 // brokerStateName maps the wire lifecycle enum to its lowercase name.
 func brokerStateName(s pulsepb.BrokerState) string {
-	switch s {
-	case pulsepb.BrokerState_BROKER_STATE_STARTING:
-		return "starting"
-	case pulsepb.BrokerState_BROKER_STATE_RECOVERING:
-		return "recovering"
-	case pulsepb.BrokerState_BROKER_STATE_RUNNING:
-		return "running"
-	case pulsepb.BrokerState_BROKER_STATE_DRAINING:
-		return "draining"
-	case pulsepb.BrokerState_BROKER_STATE_STOPPING:
-		return "stopping"
-	case pulsepb.BrokerState_BROKER_STATE_STOPPED:
-		return "stopped"
-	default:
-		return "unspecified"
-	}
+	return strings.ToLower(strings.TrimPrefix(s.String(), "BROKER_STATE_"))
 }
