@@ -20,7 +20,7 @@ func Example() {
 	if err != nil {
 		panic(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx := context.Background()
 	if _, err := c.CreateTopic(ctx, "orders", client.TopicConfig{Partitions: 1}); err != nil {
