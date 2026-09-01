@@ -150,6 +150,14 @@ func Run(cfg config.Config) error {
 	recorder.SetUp(false)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace.Duration())
 	defer cancel()
+	go func() {
+		<-sigCh
+		logger.Warn("second shutdown signal received, forcing stop")
+		cancel()
+	}()
+	// Drain first: followers are canceled and new work is refused, so
+	// GracefulStop only waits for in-flight unary calls, not the grace window.
+	app.Drain()
 	transport.GracefulStop(shutdownCtx)
 	if monSrv != nil {
 		_ = monSrv.Shutdown(shutdownCtx)
