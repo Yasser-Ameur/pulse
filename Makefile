@@ -14,11 +14,14 @@ export GOFLAGS GOSUMDB GOPROXY CGO_ENABLED
 
 CGO_ENABLED := $(CGO)
 
+VERSION ?= $(shell git describe --tags --always --dirty)
+LDFLAGS := -s -w -X github.com/pulse-stream/pulse/internal/server.Version=$(VERSION)
+
 .PHONY: build
 build:
 	mkdir -p bin
-	go build -o bin/pulse-server ./cmd/pulse-server
-	go build -o bin/pulse-cli ./cmd/pulse-cli
+	go build -ldflags="$(LDFLAGS)" -o bin/pulse-server ./cmd/pulse-server
+	go build -ldflags="$(LDFLAGS)" -o bin/pulse-cli ./cmd/pulse-cli
 
 .PHONY: test
 test:
@@ -32,13 +35,17 @@ test-race:
 vet:
 	go vet ./...
 
+.PHONY: bench-check
+bench-check:
+	cd bench && go vet ./... && go build ./...
+
 .PHONY: fmt-check
 fmt-check:
-	@test -z "$$(gofmt -l ./internal ./cmd ./pkg ./tests ./examples)" || (echo "gofmt needed:"; gofmt -l ./internal ./cmd ./pkg ./tests ./examples; exit 1)
+	@test -z "$$(gofmt -l ./internal ./cmd ./pkg ./tests ./examples ./bench)" || (echo "gofmt needed:"; gofmt -l ./internal ./cmd ./pkg ./tests ./examples ./bench; exit 1)
 
 .PHONY: fmt
 fmt:
-	gofmt -w ./internal ./cmd ./pkg ./tests ./examples
+	gofmt -w ./internal ./cmd ./pkg ./tests ./examples ./bench
 
 .PHONY: lint
 lint:

@@ -4,4 +4,9 @@ bin
 data
 coverage.out
 coverage.html
+bench/tmp
+bench/results
+bench/bin
+quickstart.exe
+*.exe
 
