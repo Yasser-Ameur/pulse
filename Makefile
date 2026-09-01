@@ -56,6 +56,16 @@ coverage:
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
+# Floor is 3 points under the total measured on 2026-09-02 (53.5%).
+COVERAGE_FLOOR ?= 50
+
+.PHONY: coverage-check
+coverage-check:
+	go test -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | awk -v floor=$(COVERAGE_FLOOR) \
+		'/^total:/ { pct = $$3 + 0; printf "total coverage: %.1f%% (floor %d%%)\n", pct, floor; \
+		if (pct < floor) { print "coverage below floor"; exit 1 } }'
+
 .PHONY: clean
 clean:
 	rm -rf bin dist data coverage.out coverage.html

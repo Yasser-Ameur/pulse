@@ -7,7 +7,7 @@ Pulse takes patches through pull requests against `master`.
 Run the full gate locally and make sure it is green:
 
 ```
-make fmt-check vet lint test-race
+make fmt-check vet lint test-race coverage-check
 ```
 
 There is no Go toolchain requirement beyond what `go.mod` names; if you do

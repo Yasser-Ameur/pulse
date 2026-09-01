@@ -36,6 +36,13 @@ jobs:
         run: make test
       - name: Tests with race detector
         run: make test-race
+      - name: Coverage floor
+        run: make coverage-check
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
       - name: Bench harness
         run: make bench-check
       - name: Build binaries
