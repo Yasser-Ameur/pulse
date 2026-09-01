@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -46,5 +47,33 @@ func TestPublishReturnsImmediatelyOnNonUnavailable(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > publishInitialBackoff {
 		t.Fatalf("Publish took %v; a non-Unavailable error must not retry", elapsed)
+	}
+}
+
+// TestPublishRetriesUntilDeadline pins that the caller's context, not an
+// attempt count, is the retry budget: against a broker that is not listening
+// the loop keeps retrying Unavailable until the deadline, then reports it.
+func TestPublishRetriesUntilDeadline(t *testing.T) {
+	inst := testutil.Start(t, testutil.Options{})
+	addr := inst.Addr
+	inst.Stop(t)
+
+	c, err := Dial(addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	const budget = 400 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	start := time.Now()
+	_, err = c.Publish(ctx, "orders", 0, Message{Payload: []byte("x")})
+	elapsed := time.Since(start)
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("Publish error = %v, want ErrUnavailable", err)
+	}
+	if elapsed < budget-50*time.Millisecond {
+		t.Fatalf("Publish gave up after %v, want it to retry until the %v budget", elapsed, budget)
 	}
 }

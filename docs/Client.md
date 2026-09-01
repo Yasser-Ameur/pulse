@@ -42,8 +42,9 @@ offsets, err := c.Publish(ctx, "orders", 0, client.Message{
 `Publish` accepts a variadic list of `client.Message` and returns one offset
 per message, aligned by index. If the broker returns `codes.Unavailable`
 (returned while it is draining), `Publish` retries automatically with
-exponential backoff: 50ms initial, doubling, capped at 2s, up to 5 attempts
-total (`pkg/client/publish.go`). Any other error, or exhausting the attempts,
+exponential backoff: 50ms initial, doubling, capped at 2s, until the caller's
+context is done; a context without a deadline is bounded by the call timeout
+(`pkg/client/publish.go`). Any other error, or running out of budget,
 returns immediately.
 
 ## Subscribe

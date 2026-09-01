@@ -9,20 +9,20 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// publishInitialBackoff, publishMaxBackoff and publishMaxAttempts bound
-// Publish's retry loop: the broker returns Unavailable while draining, and a
-// short bounded backoff is enough to ride that out without stalling a
-// producer indefinitely.
+// publishInitialBackoff and publishMaxBackoff shape Publish's retry loop: the
+// broker returns Unavailable while draining or restarting, and the loop keeps
+// trying until the caller's deadline, so the caller's context is the budget.
 const (
 	publishInitialBackoff = 50 * time.Millisecond
 	publishMaxBackoff     = 2 * time.Second
-	publishMaxAttempts    = 5
 )
 
 // Publish appends messages to a topic partition and returns one offset per
 // message, aligned by index. It retries automatically on codes.Unavailable
-// (the broker returns it while draining) with exponential backoff, up to
-// publishMaxAttempts attempts; any other error returns immediately.
+// (the broker returns it while draining) with exponential backoff until ctx
+// is done; a ctx without a deadline is bounded by the call timeout. Any other
+// error returns immediately. When the budget runs out the last Unavailable
+// error is returned, so errors.Is(err, ErrUnavailable) holds.
 func (c *Client) Publish(ctx context.Context, topic string, partition int32, msgs ...Message) ([]int64, error) {
 	pbMsgs := make([]*pulsepb.Message, len(msgs))
 	for i, m := range msgs {
@@ -30,25 +30,19 @@ func (c *Client) Publish(ctx context.Context, topic string, partition int32, msg
 	}
 	req := &pulsepb.PublishRequest{Topic: topic, Partition: partition, Messages: pbMsgs}
 
+	opCtx, cancel := c.unaryCtx(ctx)
+	defer cancel()
 	backoff := publishInitialBackoff
-	var lastErr error
-	for attempt := 1; attempt <= publishMaxAttempts; attempt++ {
-		callCtx, cancel := c.unaryCtx(ctx)
-		resp, err := c.pubsub.Publish(callCtx, req)
-		cancel()
+	for {
+		resp, err := c.pubsub.Publish(opCtx, req)
 		if err == nil {
 			return resp.Offsets, nil
 		}
-		lastErr = err
-		if status.Code(err) != codes.Unavailable || attempt == publishMaxAttempts {
-			break
-		}
-		if !sleepBackoff(ctx, backoff) {
-			return nil, ctx.Err()
+		if status.Code(err) != codes.Unavailable || !sleepBackoff(opCtx, backoff) {
+			return nil, wrapErr(err)
 		}
 		backoff = nextBackoff(backoff)
 	}
-	return nil, wrapErr(lastErr)
 }
 
 // sleepBackoff waits for d or until ctx is done, reporting which happened.

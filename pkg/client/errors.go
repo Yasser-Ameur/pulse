@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 
 	"google.golang.org/grpc/codes"
@@ -10,6 +11,7 @@ import (
 // Sentinel errors mapped from the gRPC status codes the broker returns.
 // errors.Is matches these against any error returned by a Client method;
 // status.Code still recovers the original gRPC status from the same error.
+// DeadlineExceeded and Canceled map to their context package errors.
 var (
 	ErrNotFound        = errors.New("pulse: not found")
 	ErrAlreadyExists   = errors.New("pulse: already exists")
@@ -28,6 +30,10 @@ func codeSentinel(c codes.Code) error {
 		return ErrInvalidArgument
 	case codes.Unavailable:
 		return ErrUnavailable
+	case codes.DeadlineExceeded:
+		return context.DeadlineExceeded
+	case codes.Canceled:
+		return context.Canceled
 	default:
 		return nil
 	}
