@@ -61,3 +61,57 @@ func TestUnaryInterceptorRecoversPanic(t *testing.T) {
 		t.Fatalf("second call error = %v, want nil (server should keep serving)", err)
 	}
 }
+
+// panicOncePubSub panics on its first Subscribe stream and serves one empty
+// batch on every stream after, mirroring panicOnceBroker for the stream path.
+type panicOncePubSub struct {
+	pulsepb.UnimplementedPubSubServer
+	calls int
+}
+
+func (p *panicOncePubSub) Subscribe(_ *pulsepb.SubscribeRequest, stream grpc.ServerStreamingServer[pulsepb.SubscribeResponse]) error {
+	p.calls++
+	if p.calls == 1 {
+		panic("boom")
+	}
+	return stream.Send(&pulsepb.SubscribeResponse{})
+}
+
+// TestStreamInterceptorRecoversPanic pins the same contract for streaming
+// handlers, using the exact interceptor NewServer installs.
+func TestStreamInterceptorRecoversPanic(t *testing.T) {
+	lis := bufconn.Listen(1 << 20)
+	t.Cleanup(func() { _ = lis.Close() })
+
+	s := grpc.NewServer(grpc.ChainStreamInterceptor(streamInterceptor(nil)))
+	pulsepb.RegisterPubSubServer(s, &panicOncePubSub{})
+	go func() { _ = s.Serve(lis) }()
+	t.Cleanup(s.Stop)
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	client := pulsepb.NewPubSubClient(conn)
+
+	stream, err := client.Subscribe(context.Background(), &pulsepb.SubscribeRequest{})
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	_, err = stream.Recv()
+	if got := status.Code(err); got != codes.Internal {
+		t.Fatalf("first stream code = %v, want %v (err=%v)", got, codes.Internal, err)
+	}
+
+	stream, err = client.Subscribe(context.Background(), &pulsepb.SubscribeRequest{})
+	if err != nil {
+		t.Fatalf("second Subscribe() error = %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("second stream Recv() error = %v, want nil (server should keep serving)", err)
+	}
+}
