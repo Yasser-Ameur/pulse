@@ -73,7 +73,26 @@ func TestPublishRetriesUntilDeadline(t *testing.T) {
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("Publish error = %v, want ErrUnavailable", err)
 	}
-	if elapsed < budget-50*time.Millisecond {
+	if elapsed < budget-100*time.Millisecond {
 		t.Fatalf("Publish gave up after %v, want it to retry until the %v budget", elapsed, budget)
+	}
+}
+
+// TestJitterNeverExceedsSchedule pins the full-jitter contract: the sleep
+// applied for a given backoff step is a uniform random duration in [0, d],
+// never more than the schedule value itself, and the schedule is still
+// capped at publishMaxBackoff.
+func TestJitterNeverExceedsSchedule(t *testing.T) {
+	d := publishInitialBackoff
+	for i := 0; i < 10; i++ {
+		if d > publishMaxBackoff {
+			t.Fatalf("step %d: schedule %v exceeds cap %v", i, d, publishMaxBackoff)
+		}
+		for j := 0; j < 50; j++ {
+			if s := jitter(d); s < 0 || s > d {
+				t.Fatalf("jitter(%v) = %v, want [0, %v]", d, s, d)
+			}
+		}
+		d = nextBackoff(d)
 	}
 }

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"math/rand/v2"
 	"time"
 
 	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
@@ -45,9 +46,11 @@ func (c *Client) Publish(ctx context.Context, topic string, partition int32, msg
 	}
 }
 
-// sleepBackoff waits for d or until ctx is done, reporting which happened.
+// sleepBackoff waits for a random duration in [0, d] (full jitter, AWS
+// style) or until ctx is done, reporting which happened. Jittering the sleep
+// spreads out reconnecting clients that would otherwise retry in lockstep.
 func sleepBackoff(ctx context.Context, d time.Duration) bool {
-	timer := time.NewTimer(d)
+	timer := time.NewTimer(jitter(d))
 	defer timer.Stop()
 	select {
 	case <-timer.C:
@@ -55,6 +58,14 @@ func sleepBackoff(ctx context.Context, d time.Duration) bool {
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// jitter returns a uniform random duration in [0, d].
+func jitter(d time.Duration) time.Duration {
+	if d <= 0 {
+		return 0
+	}
+	return rand.N(d + 1)
 }
 
 func nextBackoff(d time.Duration) time.Duration {
