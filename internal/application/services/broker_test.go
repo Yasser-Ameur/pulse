@@ -223,6 +223,61 @@ func TestBrokerShutdownLifecycle(t *testing.T) {
 	}
 }
 
+func TestBrokerPublishDuringDrainReturnsErrDraining(t *testing.T) {
+	b, _, _, _ := newTestBroker(t)
+	ctx := context.Background()
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if _, err := b.CreateTopic(ctx, "orders", topic.DefaultConfig(), 1); err != nil {
+		t.Fatalf("CreateTopic() error = %v", err)
+	}
+	b.mu.Lock()
+	b.state = broker.StateDraining
+	b.mu.Unlock()
+
+	name := mustName(t, "orders")
+	if _, err := b.Publish(ctx, name, partition.ID(0), []message.Message{{Payload: []byte("x")}}); !errors.Is(err, broker.ErrDraining) {
+		t.Fatalf("Publish() during Draining error = %v, want ErrDraining", err)
+	}
+}
+
+// TestBrokerShutdownCancelsLiveSubscriber pins that Shutdown unblocks a
+// waiting follow subscription immediately, before it closes any log
+// (docs/Concurrency.md §6 step 4), rather than leaving it to the caller's own
+// context.
+func TestBrokerShutdownCancelsLiveSubscriber(t *testing.T) {
+	b, _, _, _ := newTestBroker(t)
+	ctx := context.Background()
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	tpc, err := b.CreateTopic(ctx, "orders", topic.DefaultConfig(), 1)
+	if err != nil {
+		t.Fatalf("CreateTopic() error = %v", err)
+	}
+
+	subErr := make(chan error, 1)
+	go func() {
+		sub := consumer.Subscription{Topic: tpc.Name, Partition: 0, Follow: true}
+		subErr <- b.Subscribe(context.Background(), sub, func([]message.Record) error { return nil })
+	}()
+	time.Sleep(50 * time.Millisecond) // let the subscriber reach its blocking wait
+
+	if err := b.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+
+	select {
+	case err := <-subErr:
+		if !errors.Is(err, broker.ErrDraining) {
+			t.Fatalf("Subscribe() error = %v, want ErrDraining", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe() did not unblock within 2s of Shutdown")
+	}
+}
+
 func TestBrokerRejectsUnknownTopicOnPublish(t *testing.T) {
 	b, _, _, _ := newTestBroker(t)
 	ctx := context.Background()

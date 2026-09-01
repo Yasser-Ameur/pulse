@@ -35,6 +35,12 @@ type Broker struct {
 
 	retentionInterval time.Duration
 	sweepStop         chan struct{}
+
+	// drainCtx is canceled with cause broker.ErrDraining the instant Shutdown
+	// begins, so live Subscribe streams unblock immediately instead of
+	// holding gRPC's GracefulStop for the whole grace window.
+	drainCtx    context.Context
+	drainCancel context.CancelCauseFunc
 }
 
 // BrokerOptions wires a Broker to its infrastructure.
@@ -95,6 +101,7 @@ func (b *Broker) Start(ctx context.Context) error {
 		return broker.ErrInvalidTransition
 	}
 	b.state = broker.StateRecovering
+	b.drainCtx, b.drainCancel = context.WithCancelCause(context.Background())
 
 	now := b.clock.Now()
 	clusterID, ok, err := b.store.ClusterID(ctx)
@@ -169,6 +176,9 @@ func (b *Broker) Shutdown(ctx context.Context) error {
 	if b.state == broker.StateRunning {
 		b.state = broker.StateDraining
 	}
+	if b.drainCancel != nil {
+		b.drainCancel(broker.ErrDraining)
+	}
 	if b.state.CanTransitionTo(broker.StateStopping) {
 		b.state = broker.StateStopping
 	}
@@ -223,12 +233,19 @@ func (b *Broker) Publish(ctx context.Context, name topic.Name, id partition.ID, 
 	return b.publisher.Publish(ctx, t, id, msgs)
 }
 
-// Subscribe streams records for sub to emit.
+// Subscribe streams records for sub to emit. The stream is also canceled with
+// cause broker.ErrDraining the instant Shutdown begins, so it does not hold
+// gRPC's GracefulStop for the whole grace window.
 func (b *Broker) Subscribe(ctx context.Context, sub consumer.Subscription, emit func([]message.Record) error) error {
 	if err := b.running(); err != nil {
 		return err
 	}
-	return b.subscriber.Subscribe(ctx, sub, emit)
+	drainCtx := b.drainCtx
+	merged, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stop := context.AfterFunc(drainCtx, func() { cancel(context.Cause(drainCtx)) })
+	defer stop()
+	return b.subscriber.Subscribe(merged, sub, emit)
 }
 
 // Ack advances a consumer's stored cursor.
@@ -263,14 +280,19 @@ func (b *Broker) ListTopics(ctx context.Context) ([]topic.Topic, error) {
 	return b.topics.ListTopics(ctx)
 }
 
-// running returns ErrNotRunning unless the broker is serving requests.
+// running returns broker.ErrDraining while the broker is shutting down and
+// broker.ErrNotRunning otherwise, unless the broker is serving requests.
 func (b *Broker) running() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.state != broker.StateRunning {
+	switch b.state {
+	case broker.StateRunning:
+		return nil
+	case broker.StateDraining, broker.StateStopping:
+		return broker.ErrDraining
+	default:
 		return broker.ErrNotRunning
 	}
-	return nil
 }
 
 // startSweeper launches the background retention sweeper. The caller holds

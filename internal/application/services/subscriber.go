@@ -66,6 +66,11 @@ func (s *Subscriber) Subscribe(ctx context.Context, sub consumer.Subscription, e
 		start := time.Now()
 		records, err := lg.Read(ctx, pos, s.readLimit, s.readMaxBytes)
 		if err != nil {
+			// Read surfaces a plain ctx.Err() on cancellation; recover the
+			// specific cause (e.g. broker.ErrDraining) instead.
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
 			return err
 		}
 		if len(records) > 0 {
@@ -77,6 +82,7 @@ func (s *Subscriber) Subscribe(ctx context.Context, sub consumer.Subscription, e
 				return err
 			}
 			s.metrics.RecordConsume(len(records), payloadBytes)
+			s.metrics.RecordBytesRead(int64(payloadBytes))
 			s.metrics.RecordConsumeLatency(time.Since(start))
 			pos = records[len(records)-1].Offset + 1
 			continue
@@ -86,7 +92,7 @@ func (s *Subscriber) Subscribe(ctx context.Context, sub consumer.Subscription, e
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return context.Cause(ctx)
 		case <-ch:
 		}
 	}

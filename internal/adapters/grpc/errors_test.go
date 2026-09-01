@@ -44,6 +44,7 @@ func TestMapError(t *testing.T) {
 		{name: "offset out of range", in: offset.ErrOutOfRange, want: codes.OutOfRange},
 		{name: "offset invalid wraps out of range", in: offset.ErrInvalid, want: codes.OutOfRange},
 		{name: "broker not running", in: broker.ErrNotRunning, want: codes.Unavailable},
+		{name: "broker draining", in: broker.ErrDraining, want: codes.Unavailable},
 		{name: "unrecognized", in: errors.New("some internal failure"), want: codes.Internal},
 	}
 

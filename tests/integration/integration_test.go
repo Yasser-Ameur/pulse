@@ -6,16 +6,24 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/pulse-stream/pulse/internal/application/services"
 	"github.com/pulse-stream/pulse/internal/domain/consumer"
 	"github.com/pulse-stream/pulse/internal/domain/message"
 	"github.com/pulse-stream/pulse/internal/domain/offset"
 	"github.com/pulse-stream/pulse/internal/domain/partition"
 	"github.com/pulse-stream/pulse/internal/domain/topic"
+	grpctransport "github.com/pulse-stream/pulse/internal/infrastructure/grpc"
 	"github.com/pulse-stream/pulse/internal/infrastructure/grpc/client"
+	"github.com/pulse-stream/pulse/internal/infrastructure/logging"
+	"github.com/pulse-stream/pulse/internal/infrastructure/metrics"
+	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/log"
+	"github.com/pulse-stream/pulse/internal/infrastructure/storage/metadata"
+	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
 	"github.com/pulse-stream/pulse/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -151,6 +159,70 @@ func TestFollowStreamsLiveMessages(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("subscribe did not stop after cancel")
+	}
+}
+
+// TestShutdownCancelsFollowerImmediately pins docs/Concurrency.md §6 step 4:
+// Broker.Shutdown cancels every live follow stream immediately instead of
+// waiting for it to notice via the gRPC transport's own grace window. It
+// builds the broker directly (rather than through testutil.Instance, whose
+// Stop calls GracefulStop before Shutdown) so it can call Shutdown on its own
+// and observe that it alone unblocks the follower.
+func TestShutdownCancelsFollowerImmediately(t *testing.T) {
+	dir := t.TempDir()
+	logger := logging.NewNopLogger()
+	meta, err := metadata.OpenPebble(dir + "/meta")
+	require.NoError(t, err)
+	factory := log.NewFactory(dir, log.Config{}, logger)
+	app := services.NewBroker(services.BrokerOptions{
+		MetadataStore: meta,
+		LogFactory:    factory,
+		Clock:         timeutil.SystemClock{},
+		Logger:        logger,
+		Metrics:       metrics.NoopRecorder{},
+		ListenAddr:    "127.0.0.1:0",
+		Version:       "test",
+		ReadLimit:     512,
+		ReadMaxBytes:  1 << 20,
+	})
+	require.NoError(t, app.Start(context.Background()))
+
+	srv := grpctransport.NewServer(app, timeutil.SystemClock{}, grpctransport.Options{
+		GraceTimeout: 5 * time.Second,
+		Logger:       logger,
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() { _ = srv.Serve(ln) }()
+
+	c, err := client.Dial(ln.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+
+	ctx := context.Background()
+	_, err = c.CreateTopic(ctx, "drain", topic.DefaultConfig(), 1)
+	require.NoError(t, err)
+	name := mustTopic(t, "drain")
+
+	subErr := make(chan error, 1)
+	go func() {
+		subErr <- c.Subscribe(context.Background(), consumer.Subscription{Topic: name, Partition: partition.ID(0), Follow: true},
+			func(message.Record) error { return nil })
+	}()
+	time.Sleep(200 * time.Millisecond) // let the follower reach its blocking wait
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, app.Shutdown(shutdownCtx))
+	require.Less(t, time.Since(start), 2*time.Second, "Shutdown should not wait for the grace period")
+
+	select {
+	case err := <-subErr:
+		require.Equal(t, codes.Unavailable, status.Code(err), "subscribe error = %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("subscribe did not stop within 2s of Shutdown")
 	}
 }
 

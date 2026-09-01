@@ -21,6 +21,9 @@ var (
 	ErrNotRunning = errors.New("broker not running")
 	// ErrInvalidAddress reports a missing or malformed advertised address.
 	ErrInvalidAddress = errors.New("invalid broker address")
+	// ErrDraining reports that the broker is shutting down and is rejecting
+	// new work and canceling in-flight subscriber reads.
+	ErrDraining = errors.New("broker draining")
 )
 
 // ClusterID is the unique identifier of a Pulse cluster. It is a ULID,

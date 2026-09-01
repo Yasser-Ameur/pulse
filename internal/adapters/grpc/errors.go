@@ -43,6 +43,8 @@ func mapError(err error) error {
 		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, offset.ErrOutOfRange):
 		return status.Error(codes.OutOfRange, err.Error())
+	case errors.Is(err, broker.ErrDraining):
+		return status.Error(codes.Unavailable, "broker draining")
 	case errors.Is(err, broker.ErrNotRunning):
 		return status.Error(codes.Unavailable, "broker not running")
 	default:
