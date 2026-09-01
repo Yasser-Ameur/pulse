@@ -1,6 +1,10 @@
 // Command quickstart exercises the pulse.v1 protocol end to end against a
 // running broker: create a topic, publish a batch, replay it, and advance a
 // consumer cursor. Start the broker first (make build && bin/pulse-server).
+//
+// It depends only on the public github.com/pulse-stream/pulse/pkg/client
+// package, so it builds as-is against any Pulse broker without importing
+// anything internal.
 package main
 
 import (
@@ -10,12 +14,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/internal/infrastructure/grpc/client"
+	"github.com/pulse-stream/pulse/pkg/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -38,35 +37,28 @@ func run(addr string) error {
 	}
 	defer func() { _ = c.Close() }()
 
-	name, err := topic.NewName("quickstart")
-	if err != nil {
-		return fmt.Errorf("topic name: %w", err)
-	}
-	if _, err := c.CreateTopic(ctx, name.String(), topic.DefaultConfig(), 1); err != nil {
+	const topicName = "quickstart"
+	if _, err := c.CreateTopic(ctx, topicName, client.TopicConfig{Partitions: 1}); err != nil {
 		if status.Code(err) != codes.AlreadyExists {
 			return fmt.Errorf("create topic: %w", err)
 		}
 	}
 
-	offsets, err := c.Publish(ctx, name, partition.ID(0), []message.Message{
-		{Key: "user-42", Payload: []byte(`{"event":"order_placed","sku":"a1"}`), ContentType: "application/json"},
-		{Key: "user-42", Payload: []byte(`{"event":"order_shipped","sku":"a1"}`), ContentType: "application/json"},
-	})
+	offsets, err := c.Publish(ctx, topicName, 0,
+		client.Message{Key: "user-42", Payload: []byte(`{"event":"order_placed","sku":"a1"}`), ContentType: "application/json"},
+		client.Message{Key: "user-42", Payload: []byte(`{"event":"order_shipped","sku":"a1"}`), ContentType: "application/json"},
+	)
 	if err != nil {
 		return fmt.Errorf("publish: %w", err)
 	}
 	log.Printf("published offsets %v", offsets)
 
-	sub := consumer.Subscription{
-		Consumer:  consumer.ID("quickstart"),
-		Topic:     name,
-		Partition: partition.ID(0),
-	}
+	const consumerID = "quickstart"
 	// A stored cursor is the NEXT offset to consume, so acknowledge one past
 	// the last record processed (docs/Guarantees.md §3). Acking the last
 	// delivered offset would redeliver that record on every resume.
-	var next offset.Offset
-	err = c.Subscribe(ctx, sub, func(r message.Record) error {
+	var next int64
+	err = c.Subscribe(ctx, topicName, 0, client.SubscribeOptions{Consumer: consumerID}, func(r client.Record) error {
 		fmt.Printf("%d\t%s\n", r.Offset, r.Message.Payload)
 		next = r.Offset + 1
 		return nil
@@ -75,7 +67,7 @@ func run(addr string) error {
 		return fmt.Errorf("subscribe: %w", err)
 	}
 
-	if _, err := c.Ack(ctx, sub.Consumer, name, sub.Partition, next); err != nil {
+	if _, err := c.Ack(ctx, consumerID, topicName, 0, next); err != nil {
 		return fmt.Errorf("ack: %w", err)
 	}
 	log.Printf("acked; this consumer resumes at offset %d", next)

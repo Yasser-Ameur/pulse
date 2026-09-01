@@ -9,11 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/internal/infrastructure/grpc/client"
+	"github.com/pulse-stream/pulse/pkg/client"
 )
 
 // pulseTarget runs pulse-server with sync-mode: every-write, which fsyncs the
@@ -22,7 +18,7 @@ import (
 type pulseTarget struct {
 	bin   string
 	addr  string
-	topic topic.Name
+	topic string
 	sync  bool
 	cmd   *exec.Cmd
 	admin *client.Client
@@ -36,7 +32,7 @@ func newPulseTarget(bin string, sync bool) (*pulseTarget, error) {
 	return &pulseTarget{
 		bin:   bin,
 		addr:  fmt.Sprintf("127.0.0.1:%d", port),
-		topic: topic.Name("bench"),
+		topic: "bench",
 		sync:  sync,
 	}, nil
 }
@@ -84,7 +80,7 @@ func (p *pulseTarget) Start(ctx context.Context, dir string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := c.BrokerInfo(ctx); err != nil {
+		if _, err := c.Info(ctx); err != nil {
 			_ = c.Close()
 			return err
 		}
@@ -94,7 +90,7 @@ func (p *pulseTarget) Start(ctx context.Context, dir string) error {
 }
 
 func (p *pulseTarget) Setup(ctx context.Context) error {
-	_, err := p.admin.CreateTopic(ctx, p.topic.String(), topic.DefaultConfig(), 1)
+	_, err := p.admin.CreateTopic(ctx, p.topic, client.TopicConfig{Partitions: 1})
 	return err
 }
 
@@ -113,16 +109,11 @@ func (p *pulseTarget) Replay(ctx context.Context, want int) (int, error) {
 	}
 	defer c.Close()
 
-	start := offset.Offset(0)
-	sub := consumer.Subscription{
-		Topic:     p.topic,
-		Partition: 0,
-		Start:     &start,
-		Follow:    false,
-	}
+	start := int64(0)
+	opts := client.SubscribeOptions{StartOffset: &start, Follow: false}
 	seen := 0
 	stop := errStop
-	err = c.Subscribe(ctx, sub, func(message.Record) error {
+	err = c.Subscribe(ctx, p.topic, 0, opts, func(client.Record) error {
 		seen++
 		if seen >= want {
 			return stop
@@ -156,13 +147,13 @@ func (p *pulseTarget) Kill() error {
 
 type pulsePublisher struct {
 	c     *client.Client
-	topic topic.Name
-	buf   [1]message.Message
+	topic string
+	buf   [1]client.Message
 }
 
 func (p *pulsePublisher) Publish(ctx context.Context, payload []byte) error {
-	p.buf[0] = message.Message{Payload: payload}
-	_, err := p.c.Publish(ctx, p.topic, 0, p.buf[:])
+	p.buf[0] = client.Message{Payload: payload}
+	_, err := p.c.Publish(ctx, p.topic, 0, p.buf[:]...)
 	return err
 }
 
