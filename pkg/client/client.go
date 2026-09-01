@@ -50,6 +50,25 @@ func WithMaxMsgBytes(n int) Option {
 	return func(o *options) { o.maxMsgBytes = n }
 }
 
+// WithToken attaches token as per-RPC credentials, sent as gRPC metadata key
+// "authorization" with value "Bearer <token>" on every call. Its
+// RequireTransportSecurity is false, so it works over a plaintext connection
+// too; use it only when the broker is reached over a trusted network or
+// combine it with WithTLS. A missing or wrong token surfaces as
+// ErrUnauthenticated.
+func WithToken(token string) Option {
+	return func(o *options) { o.dialOpts = append(o.dialOpts, grpc.WithPerRPCCredentials(tokenCreds(token))) }
+}
+
+// tokenCreds implements credentials.PerRPCCredentials for WithToken.
+type tokenCreds string
+
+func (t tokenCreds) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + string(t)}, nil
+}
+
+func (t tokenCreds) RequireTransportSecurity() bool { return false }
+
 // Client is a pulse.v1 client.
 type Client struct {
 	conn        *grpc.ClientConn

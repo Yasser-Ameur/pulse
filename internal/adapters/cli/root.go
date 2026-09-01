@@ -24,7 +24,8 @@ const unaryTimeout = 30 * time.Second
 
 // Options carries the shared CLI flags.
 type Options struct {
-	Addr string
+	Addr  string
+	Token string
 
 	TLSCA         string
 	TLSCert       string
@@ -40,6 +41,7 @@ func NewRootCmd() *cobra.Command {
 		Short: "Pulse broker command-line client",
 	}
 	root.PersistentFlags().StringVar(&opts.Addr, "addr", defaultAddr, "broker address")
+	root.PersistentFlags().StringVar(&opts.Token, "token", os.Getenv("PULSE_TOKEN"), "auth token (defaults to PULSE_TOKEN)")
 	root.PersistentFlags().StringVar(&opts.TLSCA, "tls-ca", "", "trust this CA certificate file; its presence enables TLS")
 	root.PersistentFlags().StringVar(&opts.TLSCert, "tls-cert", "", "client certificate file for mTLS")
 	root.PersistentFlags().StringVar(&opts.TLSKey, "tls-key", "", "client key file for mTLS")
@@ -82,6 +84,9 @@ func connect(opts *Options, ctx context.Context) (*client.Client, error) {
 	var dialOpts []client.Option
 	if tlsConfig != nil {
 		dialOpts = append(dialOpts, client.WithTLS(tlsConfig))
+	}
+	if opts.Token != "" {
+		dialOpts = append(dialOpts, client.WithToken(opts.Token))
 	}
 	c, err := client.Dial(opts.Addr, dialOpts...)
 	if err != nil {

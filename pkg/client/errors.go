@@ -17,6 +17,7 @@ var (
 	ErrAlreadyExists   = errors.New("pulse: already exists")
 	ErrInvalidArgument = errors.New("pulse: invalid argument")
 	ErrUnavailable     = errors.New("pulse: unavailable")
+	ErrUnauthenticated = errors.New("pulse: unauthenticated")
 )
 
 // codeSentinel maps a gRPC code to its exported sentinel, if any.
@@ -30,6 +31,8 @@ func codeSentinel(c codes.Code) error {
 		return ErrInvalidArgument
 	case codes.Unavailable:
 		return ErrUnavailable
+	case codes.Unauthenticated:
+		return ErrUnauthenticated
 	case codes.DeadlineExceeded:
 		return context.DeadlineExceeded
 	case codes.Canceled:
