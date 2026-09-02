@@ -294,6 +294,9 @@ type fakeFactory struct {
 	// over createErr; it lets a test make one partition's Create succeed
 	// while a later one fails, exercising CreateTopic's partial rollback.
 	createErrs map[partitionKey]error
+	// deleteErr fails every Delete call, for exercising a rollback or
+	// DeleteTopic's own best-effort error reporting.
+	deleteErr error
 }
 
 func newFakeFactory() *fakeFactory {
@@ -340,6 +343,9 @@ func (f *fakeFactory) Open(_ context.Context, name topic.Name, id partition.ID) 
 func (f *fakeFactory) Delete(_ context.Context, name topic.Name, id partition.ID) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
 	k := partitionKey{topicName: name, partition: id}
 	if _, ok := f.logs[k]; ok {
 		delete(f.logs, k)

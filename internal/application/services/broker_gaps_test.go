@@ -123,3 +123,28 @@ func TestBrokerTopicsViewReportsPartitionOffsets(t *testing.T) {
 		t.Fatalf("TopicsView()[0].Partitions = %+v, want one partition at offset 0", views[0].Partitions)
 	}
 }
+
+func TestBrokerDeleteTopicRejectsWhenNotRunning(t *testing.T) {
+	b, _, _, _ := newTestBroker(t)
+	// Not started: state is Starting, not Running.
+	if err := b.DeleteTopic(context.Background(), "orders"); !errors.Is(err, broker.ErrNotRunning) {
+		t.Fatalf("DeleteTopic() error = %v, want ErrNotRunning", err)
+	}
+}
+
+// TestCreateTopicRollbackReportsFactoryDeleteFailure pins that when the
+// rollback itself cannot delete a partition's log, CreateTopic still returns
+// the original creation error (the rollback failure is only logged, not
+// swapped in as the returned error).
+func TestCreateTopicRollbackReportsFactoryDeleteFailure(t *testing.T) {
+	m, _, factory, _ := newTestTopicManager(t)
+	ctx := context.Background()
+	name := mustName(t, "orders")
+	factory.createErrs[partitionKey{topicName: name, partition: partition.ID(1)}] = errors.New("no space")
+	factory.deleteErr = errors.New("delete also failed")
+
+	_, err := m.CreateTopic(ctx, "orders", topic.DefaultConfig(), 2)
+	if err == nil || err.Error() != "no space" {
+		t.Fatalf("CreateTopic() error = %v, want the original create failure", err)
+	}
+}
