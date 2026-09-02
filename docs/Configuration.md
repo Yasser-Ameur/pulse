@@ -29,6 +29,9 @@ which wins if both are set).
 | `storage.sync-mode` | `PULSE_SYNC_MODE`, `PULSE_STORAGE_SYNC_MODE` | string | `every-write` | `every-write` fsyncs every append; `interval` fsyncs periodically. | Must be `every-write` or `interval`. |
 | `storage.sync-interval` | `PULSE_STORAGE_SYNC_INTERVAL` | duration | `100ms` | fsync period for `interval` mode. | Must be positive. |
 | `storage.retention-interval` | `PULSE_STORAGE_RETENTION_INTERVAL` | duration | `30s` | How often the retention sweeper runs; `0` disables it. | Must not be negative. |
+| `storage.compaction-interval` | `PULSE_STORAGE_COMPACTION_INTERVAL` | duration | `30s` | How often the compaction sweeper runs for `compact` topics; `0` disables it. | Must not be negative. |
+| `storage.compaction-tombstone-retention` | `PULSE_STORAGE_COMPACTION_TOMBSTONE_RETENTION` | duration | `24h` | How long a tombstone (a keyed record with a nil payload) survives compaction before it and the values it superseded are dropped. | Must not be negative. |
+| `storage.compaction-min-gain-ratio` | `PULSE_STORAGE_COMPACTION_MIN_GAIN_RATIO` | float | `0.1` | Minimum fraction a segment must shrink by for a compaction rewrite to be kept. | `0 <= n <= 1`. |
 | `subscribe.read-limit` | `PULSE_SUBSCRIBE_READ_LIMIT` | int | `512` | Max records returned per subscribe read. | Must be positive. |
 | `subscribe.read-max-bytes` | `PULSE_SUBSCRIBE_READ_MAX_BYTES` | int (bytes) | `1048576` (1 MiB) | Max payload bytes returned per subscribe read. | Must be positive. |
 | `tls.cert-file` | `PULSE_TLS_CERT_FILE` | string | `""` | PEM server certificate path. Empty (with `key-file` empty) serves plaintext. | Must be set together with `key-file`. |
@@ -58,6 +61,20 @@ sources in order:
 
 `Load` returns as soon as any of these three stages fails; a broker never
 starts on a configuration it could not fully resolve and validate.
+
+## Compaction
+
+`storage.compaction-interval`, `storage.compaction-tombstone-retention`, and
+`storage.compaction-min-gain-ratio` only affect topics created with
+`Cleanup: compact` (`topic.CleanupCompact`); a `delete` topic ignores them.
+Retention and compaction share one background maintenance goroutine
+(`Broker.sweep`, `internal/application/services/broker.go`): the goroutine's
+tick period is the smaller of `storage.retention-interval` and
+`storage.compaction-interval` that is nonzero, and each tick applies retention
+to `delete` topics and compaction to `compact` topics. Setting
+`storage.compaction-interval` to `0` disables the compaction side without
+touching retention. See docs/Storage.md §8 for what one compaction pass does
+and docs/Operations.md for tuning guidance.
 
 ## TLS and mTLS setup
 
