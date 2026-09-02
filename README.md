@@ -111,11 +111,8 @@ names the code that implements them, and lists what Pulse does not give you.
   (`tests/integration/compaction_test.go`).
 - **A public Go client**, `pkg/client`, with full-jitter retry on
   `Unavailable` and transparent `Subscribe` resume
-  (`pkg/client/backoff_test.go:32-81`). Import it from inside a clone: the
-  module path (`github.com/pulse-stream/pulse`, `go.mod:1`) does not match
-  the repository host, so a bare `go get` from outside this repo does not
-  resolve (checked this session, see the trace); use a local `replace`
-  directive.
+  (`pkg/client/backoff_test.go:32-81`), module path `github.com/Yasser-Ameur/pulse`
+  (`go.mod:1`) matching the repository host: `go get github.com/Yasser-Ameur/pulse/pkg/client`.
 
 ## Usage
 

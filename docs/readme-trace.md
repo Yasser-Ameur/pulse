@@ -230,3 +230,22 @@ published offset 0
 ```
 
 README.md:44-47 updated to this run's timestamp.
+
+## R18. Module path fixed (2026-09-02, later session)
+
+The "Import path caveat" above (R at line 114) is now historical. `go.mod:1`
+was renamed from `module github.com/pulse-stream/pulse` to `module
+github.com/Yasser-Ameur/pulse`, and every import across the repo's `.go`
+files, `Makefile`, `Dockerfile`, `.github/workflows/release.yml`,
+`docs/Client.md` and `docs/Protocol.md` was updated to match. The module path
+now matches the repository host, so `go get github.com/Yasser-Ameur/pulse/pkg/client`
+will resolve once this commit is pushed; it cannot be checked against the live
+proxy from an unpushed local commit, so that step is not claimed as run this
+session. The full gate (gofmt, go vet, go test -race) was re-run against the
+rename in the `golang:1.26` container this session, all packages `ok`; the
+bench module (`bench/go.mod`, its own `replace` target) was rebuilt and
+vetted the same way; `docker build -t pulse:test .` and a second build with
+`--build-arg VERSION=v0.2.0-test` both succeeded, and `docker run --rm
+pulse:vtest --version` printed `v0.2.0-test`, confirming the ldflags path
+still finds `internal/server.Version` after the rename; `golangci-lint run
+./...` (v2.12.2) reported 0 issues.
