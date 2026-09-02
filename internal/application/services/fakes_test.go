@@ -286,19 +286,34 @@ type fakeFactory struct {
 	deleted   []partitionKey
 	createErr error
 	openErr   error
+	// openErrs fails Open for one specific partition, taking precedence over
+	// openErr; it lets a test make one partition's Open succeed while another
+	// fails, e.g. to exercise the opened-logs rollback on a partial Start.
+	openErrs map[partitionKey]error
+	// createErrs fails Create for one specific partition, taking precedence
+	// over createErr; it lets a test make one partition's Create succeed
+	// while a later one fails, exercising CreateTopic's partial rollback.
+	createErrs map[partitionKey]error
 }
 
 func newFakeFactory() *fakeFactory {
-	return &fakeFactory{logs: make(map[partitionKey]*fakeLog)}
+	return &fakeFactory{
+		logs:       make(map[partitionKey]*fakeLog),
+		openErrs:   make(map[partitionKey]error),
+		createErrs: make(map[partitionKey]error),
+	}
 }
 
 func (f *fakeFactory) Create(_ context.Context, name topic.Name, id partition.ID) (storage.Log, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	k := partitionKey{topicName: name, partition: id}
+	if err, ok := f.createErrs[k]; ok {
+		return nil, err
+	}
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
-	k := partitionKey{topicName: name, partition: id}
 	lg := newFakeLog()
 	f.logs[k] = lg
 	f.created = append(f.created, k)
@@ -308,10 +323,14 @@ func (f *fakeFactory) Create(_ context.Context, name topic.Name, id partition.ID
 func (f *fakeFactory) Open(_ context.Context, name topic.Name, id partition.ID) (storage.Log, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	k := partitionKey{topicName: name, partition: id}
+	if err, ok := f.openErrs[k]; ok {
+		return nil, err
+	}
 	if f.openErr != nil {
 		return nil, f.openErr
 	}
-	lg, ok := f.logs[partitionKey{topicName: name, partition: id}]
+	lg, ok := f.logs[k]
 	if !ok {
 		return nil, ports.ErrLogNotFound
 	}
