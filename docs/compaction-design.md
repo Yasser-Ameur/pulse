@@ -287,3 +287,45 @@ Go benchmark suite with documented baselines:
 Each commit compiles, passes the full gate (`gofmt`, `go vet`,
 `golangci-lint`, `go test ./...`, plus `-race` and `-bench` on CI), and keeps
 the docs in sync.
+
+## 13. Implementation status
+
+Shipped, on `prod/compaction`, commits 1-6 of section 12 (docs is this
+commit, 7):
+
+1. Codec: `nullField` tombstones and the sparse-offset flag/bound, both
+   backward compatible, with round-trip and legacy-unchanged tests.
+2. Recovery: orphan `.tmp-*` cleanup, base-derived sealed-segment LEO with
+   holes allowed (active segments keep the original strict contiguity
+   check — they are never compacted), and per-entry index verification in
+   `restoreFromIndex` (closes the stale-index-trusted gap the recovery test
+   suite already documented).
+3. Engine: `Log.Compact` in `internal/infrastructure/storage/engine/log`
+   (not a separate package — the copy-and-swap needs direct access to the
+   log's segment list and locks). One deviation from the literal wording of
+   §5 step 1: pass 1's dedupe map streams **every** sealed segment (not just
+   the bounded candidate set), because a key's newest occurrence can live in
+   a segment pass 2 does not reach this call; only pass 2's rewrite is
+   bounded to `MaxSegmentsPerRun`. A multi-segment topic converges over
+   several sweeps, exactly as it would across ticks of the real scheduler.
+4. Broker: `storage.compaction-interval` (default 30s),
+   `storage.compaction-tombstone-retention` (default 24h), and
+   `storage.compaction-min-gain-ratio` (default 0.1, validated to `[0,1]`),
+   each with a `PULSE_STORAGE_*` override. Retention and compaction share one
+   maintenance goroutine (§8): `sweep()` dispatches per topic on `Cleanup`
+   and is always ungated when called directly (tests, or `Broker.Sweep()`);
+   the background ticker's period is the smaller of the two configured
+   intervals that are nonzero.
+5. Integration: `tests/integration/compaction_test.go` covers the crash
+   table in §6 by file surgery rather than an execution-pausing hook —
+   planting orphan `.tmp-compact-*` files reproduces "before any rename";
+   reverting an index file to its pre-compaction bytes after a real,
+   cleanly-stopped compaction reproduces "data renamed, index not yet" — plus
+   a concurrent publish-while-compacting offset-contiguity check.
+6. Benchmarks: the four baselines named in §11.
+
+All four acceptance criteria (a)-(d) hold; see the commit list for exact
+test names. Not built: literal mid-execution fault injection (e.g. a
+in-process hook that pauses `Compact` between the data and index rename)
+was judged more invasive than the file-surgery equivalent above for the
+same coverage, so it was left out rather than added speculatively.
