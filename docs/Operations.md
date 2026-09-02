@@ -157,6 +157,51 @@ cursor per `(consumer, topic, partition)`
 the same partition yourself; the broker does not hash keys for you (see
 [Client.md](Client.md) for `PartitionForKey`).
 
+## Compaction
+
+**Enabling it per topic.** Compaction is a per-topic `Cleanup` policy, not a
+broker-wide switch: create the topic with `Cleanup: "compact"`
+(`topic.CleanupCompact`). The `pulse-server` CLI's `topic create` command
+(`internal/adapters/cli/topics.go`) only exposes `--partitions` today, so
+setting `compact` means passing `client.TopicConfig{Cleanup: "compact"}` to
+`Client.CreateTopic` (`pkg/client`), or the equivalent
+`CleanupPolicy: "compact"` on a raw `CreateTopic` gRPC call. The policy is
+immutable for the life of the topic (`docs/compaction-design.md` §1); there is
+no update path to switch an existing `delete` topic to `compact` or back.
+
+**Observing it.** `Broker.sweepCompaction`
+(`internal/application/services/broker.go`) logs once per partition, only when
+a call actually rewrote or deleted a segment (a no-op sweep is silent):
+
+- `info "compaction swept"` with fields `topic`, `partition`, `segments`,
+  `bytes_before`, `bytes_after`, `tombstones_removed`.
+- `warn "compaction sweep failed"` with `topic`, `partition`, `error`, if
+  `Log.Compact` returned an error.
+
+There is no Prometheus metric for compaction bytes or segment counts today;
+`pulse_storage_bytes_written_total` and `pulse_storage_bytes_read_total`
+(see the metrics table above) count publish and subscribe I/O, not
+compaction's own rewrite traffic. Watching disk usage directly (partition
+directory size, or `bytes_before` minus `bytes_after` from the log lines) is
+the way to see compaction reclaiming space. `Broker.Sweep()` also runs one
+maintenance pass immediately, which is useful for triggering a deterministic
+compaction in a script or a test rather than waiting for the interval.
+
+**Tuning the three keys** (`docs/Configuration.md` has the full reference):
+
+- `storage.compaction-interval` (default 30s) is how often the sweeper looks
+  at `compact` topics at all. Lowering it converges duplicates faster at the
+  cost of more frequent segment scans; `0` disables compaction for every
+  `compact` topic without touching retention.
+- `storage.compaction-tombstone-retention` (default 24h) is how long a
+  tombstone keeps suppressing older values for its key. Set it longer than
+  the slowest consumer you need to guarantee sees the tombstone before the
+  values it deletes are gone for good; shorter reclaims space sooner.
+- `storage.compaction-min-gain-ratio` (default 0.1) skips rewriting a segment
+  that would not shrink by at least this fraction. Lowering it rewrites more
+  aggressively (more I/O, tighter space); raising it leaves more duplicates
+  on disk between sweeps.
+
 ## Errors a client sees
 
 Mapped in `internal/adapters/grpc/errors.go`:
