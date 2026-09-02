@@ -32,6 +32,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pulse-cli`.
 - A configurable publish batch size limit (`message.MaxBatchRecords`, 10000
   records).
+- Token authentication on the gRPC transport (`auth.tokens`,
+  `auth.token-file`, `PULSE_AUTH_TOKENS`, `PULSE_AUTH_TOKEN_FILE`), off by
+  default with a startup warning while it is off; `client.WithToken`,
+  `client.ErrUnauthenticated`, and `pulse-cli --token` / `PULSE_TOKEN`.
+- Broker-wide counters in `GET /varz`: `connections`, `subscriptions`,
+  `published_records`, `published_bytes`, `delivered_records`,
+  `delivered_bytes`.
+- `pulse-server healthcheck --config <file>` / `--monitor-addr`, used by the
+  Dockerfile `HEALTHCHECK` and `examples/docker-compose.yaml`.
+- Multi-partition topics: 1 to 256 partitions per topic, each with its own
+  order and cursor; `client.PartitionForKey` and `pulse-cli publish --key`
+  route by key on the caller's side.
+- A coverage floor (`make coverage-check`) enforced in CI, and an SBOM plus
+  build provenance attached to release artifacts.
+- `make image` to build the container image, and
+  `examples/docker-compose.yaml` running the broker alongside Prometheus
+  (`examples/prometheus.yml`).
 
 ### Changed
 
@@ -44,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   last listener to shut down.
 - `pulse-cli` and the integration tests now use `pkg/client` instead of the
   internal gRPC client, which is deleted.
+- Client retry backoff (`Publish` and `Subscribe`) now uses full jitter
+  instead of a fixed delay, to avoid a thundering herd of clients retrying in
+  lockstep.
 
 ### Fixed
 
