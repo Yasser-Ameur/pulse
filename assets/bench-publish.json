@@ -1,0 +1,116 @@
+[
+  {
+    "target": "pulse",
+    "messages": 3000,
+    "payload_bytes": 256,
+    "concurrency": 1,
+    "elapsed": 12368760990,
+    "msgs_per_sec": 242.54652526841332,
+    "mib_per_sec": 0.05921546027060872,
+    "latency": {
+      "count": 3000,
+      "min": 2074411,
+      "mean": 4122664,
+      "p50": 3142578,
+      "p90": 6860760,
+      "p99": 15232588,
+      "p999": 20484082,
+      "max": 28620867
+    }
+  },
+  {
+    "target": "pulse",
+    "messages": 3000,
+    "payload_bytes": 256,
+    "concurrency": 8,
+    "elapsed": 12740539524,
+    "msgs_per_sec": 235.4688350794523,
+    "mib_per_sec": 0.05748750856431941,
+    "latency": {
+      "count": 3000,
+      "min": 2868481,
+      "mean": 33952417,
+      "p50": 29301887,
+      "p90": 43275359,
+      "p99": 119397165,
+      "p999": 569629665,
+      "max": 618621955
+    }
+  },
+  {
+    "target": "pulse",
+    "messages": 2976,
+    "payload_bytes": 256,
+    "concurrency": 32,
+    "elapsed": 10561210264,
+    "msgs_per_sec": 281.785886807338,
+    "mib_per_sec": 0.06879538252132275,
+    "latency": {
+      "count": 2976,
+      "min": 4202777,
+      "mean": 113095752,
+      "p50": 113634540,
+      "p90": 136048630,
+      "p99": 164874424,
+      "p999": 180626094,
+      "max": 183499545
+    }
+  },
+  {
+    "target": "jetstream",
+    "messages": 3000,
+    "payload_bytes": 256,
+    "concurrency": 1,
+    "elapsed": 11259675443,
+    "msgs_per_sec": 266.43751990782846,
+    "mib_per_sec": 0.06504822263374718,
+    "latency": {
+      "count": 3000,
+      "min": 1905301,
+      "mean": 3752858,
+      "p50": 2843163,
+      "p90": 6293067,
+      "p99": 15396179,
+      "p999": 16891935,
+      "max": 18084284
+    }
+  },
+  {
+    "target": "jetstream",
+    "messages": 3000,
+    "payload_bytes": 256,
+    "concurrency": 8,
+    "elapsed": 10324093548,
+    "msgs_per_sec": 290.5824115262075,
+    "mib_per_sec": 0.07094297156401551,
+    "latency": {
+      "count": 3000,
+      "min": 2400266,
+      "mean": 27263984,
+      "p50": 25017849,
+      "p90": 43467338,
+      "p99": 62900131,
+      "p999": 87476764,
+      "max": 87582108
+    }
+  },
+  {
+    "target": "jetstream",
+    "messages": 2976,
+    "payload_bytes": 256,
+    "concurrency": 32,
+    "elapsed": 8351494504,
+    "msgs_per_sec": 356.34340638967393,
+    "mib_per_sec": 0.08699790195060399,
+    "latency": {
+      "count": 2976,
+      "min": 2281944,
+      "mean": 89173489,
+      "p50": 84974752,
+      "p90": 111755784,
+      "p99": 128488291,
+      "p999": 207518020,
+      "max": 230484644
+    }
+  }
+]
