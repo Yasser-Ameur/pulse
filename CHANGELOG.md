@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Log compaction for `compact` topics: `Log.Compact` deduplicates sealed
+  segments to the newest record per key, keeps keyless records, supports
+  tombstones (a keyed record with a nil payload), and never renumbers
+  offsets, via a crash-safe copy-and-swap rewrite.
+- `storage.compaction-interval` (default `30s`), `storage.compaction-tombstone-retention`
+  (default `24h`), and `storage.compaction-min-gain-ratio` (default `0.1`)
+  configuration keys, each with a `PULSE_STORAGE_*` environment override.
 - Version embedding: the build and the container image now stamp the
   broker's version from the git tag instead of reporting `dev`.
 - A tag-triggered release workflow that cross-builds `pulse-server` and

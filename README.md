@@ -76,6 +76,9 @@ what Pulse does not give you.
 - **Multi-partition topics**: 1 to 256 partitions per topic, each with its
   own order and cursor; `client.PartitionForKey` and `pulse-cli publish --key`
   route by key on the caller's side (see [Client.md](docs/Client.md)).
+- **Log compaction**: a `compact` topic keeps only the newest record per key,
+  with tombstones, offsets never renumbered, and crash-safe copy-and-swap
+  rewrites (see [Storage.md](docs/Storage.md) §8).
 
 ## Quickstart
 

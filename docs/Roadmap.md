@@ -28,9 +28,13 @@ What Storage.md already specifies but Phase 1 defers:
   `internal/application/services/topic_manager.go`). See
   [Guarantees.md](Guarantees.md) §4 and [Client.md](Client.md) for
   `PartitionForKey`.
-- Remaining: compaction for compacted topics (last-writer-wins per key, address
-  space preserved, design in [compaction-design.md](compaction-design.md)) and
-  read-only memory mapping of sealed segments.
+- **Shipped**: compaction for compacted topics (last-writer-wins per key,
+  offsets preserved and never renumbered, tombstones, copy-and-swap commit,
+  crash recovery of an interrupted pass), `internal/infrastructure/storage/engine/log/compact.go`.
+  See [Storage.md](Storage.md) §8, [Guarantees.md](Guarantees.md) §8, and
+  [compaction-design.md](compaction-design.md) for the design and the two
+  shipped deviations from it.
+- Remaining: read-only memory mapping of sealed segments.
 
 ## Phase 3: Networking
 
