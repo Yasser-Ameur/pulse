@@ -57,6 +57,27 @@ The same distinction backs the gRPC health service
 (`grpc.health.v1.Health`, service names `""`, `pulse.v1.Broker`,
 `pulse.v1.PubSub`), so `grpc_health_probe` works as an alternative probe.
 
+## The healthcheck subcommand and Docker
+
+`pulse-server healthcheck --config <file>` (or `--monitor-addr`,
+overriding whatever `--config` resolves) probes `/readyz` and exits
+non-zero on anything but a healthy response (`cmd/pulse-server/healthcheck.go`).
+It exists so a container runtime can shell out to a single binary instead of
+needing `curl` in the image. The `Dockerfile`'s own `HEALTHCHECK` uses it:
+
+```
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/app/pulse-server", "healthcheck", "--config", "/app/config.yaml"]
+```
+
+`examples/docker-compose.yaml` wires up the same command as the compose
+`healthcheck` entry, plus a Prometheus service scraping the broker's monitor
+listener with the scrape config in `examples/prometheus.yml`:
+
+```bash
+docker compose -f examples/docker-compose.yaml up
+```
+
 ## Prometheus
 
 Scrape the monitor listener's `/metrics`:
@@ -83,6 +104,12 @@ the Go and process collectors:
 | `pulse_consume_latency_seconds` | histogram | Subscribe read loop latency. |
 | `pulse_storage_bytes_written_total` | counter | Bytes durably written. |
 | `pulse_storage_bytes_read_total` | counter | Bytes read from storage. |
+
+`GET /varz` (see [Configuration.md](Configuration.md)) carries the same
+broker-wide counters as plain fields for a quick look without a Prometheus
+query: `connections`, `subscriptions`, `published_records`,
+`published_bytes`, `delivered_records`, and `delivered_bytes`
+(`services.Broker.Stats`, `internal/application/services/broker.go`).
 
 ## Logging
 
@@ -119,6 +146,17 @@ The gRPC server (`internal/infrastructure/grpc/server.go`) sets:
 - **Subscribe read caps**: `subscribe.read-limit` (default 512 records) and
   `subscribe.read-max-bytes` (default 1 MiB) bound a single read from the log.
 
+## Multi-partition topics
+
+A topic now takes 1 to `topic.MaxPartitions` (256) partitions at creation
+(`TopicManager.CreateTopic`, `internal/application/services/topic_manager.go`).
+Ordering stays per-partition, not per-topic: each partition has its own
+append lock and its own contiguous offsets, and `Ack` stores a separate
+cursor per `(consumer, topic, partition)`
+(`internal/application/services/subscriber.go`). Route related messages to
+the same partition yourself; the broker does not hash keys for you (see
+[Client.md](Client.md) for `PartitionForKey`).
+
 ## Errors a client sees
 
 Mapped in `internal/adapters/grpc/errors.go`:
@@ -153,6 +191,10 @@ of a self-hoster's day-one checklist.
   grace timer, so the timer only has to cover unary work.
 - **Encrypted transport**: `tls.cert-file` + `tls.key-file`; add
   `tls.client-ca-file` for mTLS. See [Configuration.md](Configuration.md).
+- **Client authentication**: `auth.tokens` or `PULSE_AUTH_TOKENS`. Off by
+  default, and the broker warns at startup while it is off. See
+  [Configuration.md](Configuration.md) and [Guarantees.md](Guarantees.md) for
+  what a valid token can and cannot do.
 - **Durability guarantee matches your risk tolerance**: `storage.sync-mode:
   every-write` (default) fsyncs every append; `interval` trades that for
   throughput at the cost of up to `storage.sync-interval` of data on a crash.
@@ -169,7 +211,9 @@ of a self-hoster's day-one checklist.
 - **Version pinned and visible**: `pulse_broker_info{version=...}` and
   `GET /varz` report the running build; images are stamped from the release
   tag (`Dockerfile`, `.github/workflows/release.yml`).
-- **Not yet provided**: authentication and authorization. TLS encrypts the
-  channel; it does not gate who may publish, subscribe, or administer topics.
-  Do not expose `listen-addr` to an untrusted network without a network-layer
-  control in front of it.
+- **Tests pass a coverage floor**: `make coverage-check` (`COVERAGE_FLOOR`,
+  default 50, in the `Makefile`) fails CI when total coverage drops below it,
+  wired as the "Coverage floor" step in `.github/workflows/ci.yml`.
+- **Not yet provided**: per-topic authorization. A valid token can publish,
+  subscribe, and administer every topic; there is no per-token scoping. Do
+  not hand a token to a client you do not trust with the whole broker.
