@@ -29,6 +29,12 @@ defer c.Close()
 | `WithDialOptions(opts ...grpc.DialOption)` | Appends raw `grpc.DialOption`s after the client's own transport and message-size options. |
 | `WithCallTimeout(d time.Duration)` | Overrides `DefaultCallTimeout` (30s), applied to a unary call only when its context carries no deadline of its own. |
 | `WithMaxMsgBytes(n int)` | Overrides `DefaultMaxMsgBytes` (64 MiB) for both send and receive. |
+| `WithToken(token string)` | Attaches `token` as per-RPC credentials, sent as gRPC metadata key `authorization: Bearer <token>` on every call. |
+
+Dial with `WithToken` when the broker has `auth.tokens` or
+`auth.token-file` set. A missing or wrong token surfaces from any RPC as
+`client.ErrUnauthenticated` (`pkg/client/errors.go`), matched with
+`errors.Is`, the same way `ErrNotFound` and the other sentinels are.
 
 ## Publish
 
@@ -44,8 +50,28 @@ per message, aligned by index. If the broker returns `codes.Unavailable`
 (returned while it is draining), `Publish` retries automatically with
 exponential backoff: 50ms initial, doubling, capped at 2s, until the caller's
 context is done; a context without a deadline is bounded by the call timeout
-(`pkg/client/publish.go`). Any other error, or running out of budget,
-returns immediately.
+(`pkg/client/publish.go`). Each wait uses full jitter: a uniform random
+duration in `[0, d]` rather than `d` itself (`jitter`, `pkg/client/publish.go`),
+so a batch of clients retrying together does not resynchronize into a
+thundering herd. Any other error, or running out of budget, returns
+immediately.
+
+### Routing by key
+
+A multi-partition topic needs the caller to pick a partition; the broker does
+not hash keys for you. `client.PartitionForKey(key string, partitions int)
+int32` (`pkg/client/partition.go`) hashes `key` with FNV-1a and maps it into
+`[0, partitions)`, so the same key always lands on the same partition for a
+given partition count:
+
+```go
+p := client.PartitionForKey("user-42", topic.Partitions)
+offsets, err := c.Publish(ctx, "orders", p, msg)
+```
+
+`pulse-cli publish --key` does exactly this: when `--key` is set and
+`--partition` is not, the CLI resolves the topic's partition count and calls
+`PartitionForKey` itself (`internal/adapters/cli/pubsub.go`).
 
 ## Subscribe
 
@@ -77,10 +103,11 @@ err := c.Subscribe(ctx, "orders", 0, client.SubscribeOptions{
 status layer (e.g. a dropped connection). Context cancellation is never
 treated as transient. Each redial resumes from the offset one past the last
 record actually delivered to `fn`, or from the original start if nothing was
-delivered yet, using the same backoff schedule as `Publish` (reset to the
-50ms floor after every successful receive, so a later disconnect starts its
-own backoff from scratch). Any other error, or `fn` itself returning an
-error, ends `Subscribe` immediately without retrying.
+delivered yet, using the same full-jitter backoff schedule as `Publish`
+(`pkg/client/subscribe.go`), reset to the 50ms floor after every successful
+receive, so a later disconnect starts its own backoff from scratch. Any other
+error, or `fn` itself returning an error, ends `Subscribe` immediately without
+retrying.
 
 ## Ack: N+1
 
@@ -106,6 +133,7 @@ still recovers the original gRPC status from the same error via `Unwrap`.
 | `client.ErrAlreadyExists` | `AlreadyExists` |
 | `client.ErrInvalidArgument` | `InvalidArgument` |
 | `client.ErrUnavailable` | `Unavailable` |
+| `client.ErrUnauthenticated` | `Unauthenticated` |
 
 ```go
 if _, err := c.Publish(ctx, "orders", 0, msg); errors.Is(err, client.ErrUnavailable) {
@@ -144,6 +172,7 @@ persistent flags on every subcommand:
 | `--tls-cert` | Client certificate file, for mTLS. |
 | `--tls-key` | Client key file, for mTLS. |
 | `--tls-skip-verify` | Skip server certificate verification (dev only). |
+| `--token` | Bearer token to authenticate with, defaulting to `PULSE_TOKEN` (`internal/adapters/cli/root.go`). |
 
 ```bash
 pulse-cli --addr pulse.internal:9090 --tls-ca ca-cert.pem topics create orders
