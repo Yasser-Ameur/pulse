@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/codec"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/index"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/codec"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/index"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 var baseTime = time.Unix(1700000000, 0).UTC()

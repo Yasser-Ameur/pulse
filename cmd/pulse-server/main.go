@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pulse-stream/pulse/internal/infrastructure/config"
-	"github.com/pulse-stream/pulse/internal/server"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/config"
+	"github.com/Yasser-Ameur/pulse/internal/server"
 	"github.com/spf13/cobra"
 )
 

@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 	"github.com/spf13/cobra"
 )
 

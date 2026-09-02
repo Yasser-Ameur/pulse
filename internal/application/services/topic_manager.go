@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 // TopicManager coordinates topic lifecycle across the metadata store and the

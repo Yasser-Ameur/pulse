@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/storage"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/storage"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 func durationOf(seconds int64) time.Duration { return time.Duration(seconds) * time.Second }

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 )
 
 func toPBMessage(m Message) *pulsepb.Message {

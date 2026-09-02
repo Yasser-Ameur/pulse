@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 	"github.com/spf13/cobra"
 )
 

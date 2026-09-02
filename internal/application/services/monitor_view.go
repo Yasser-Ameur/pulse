@@ -1,6 +1,6 @@
 package services
 
-import "github.com/pulse-stream/pulse/internal/domain/partition"
+import "github.com/Yasser-Ameur/pulse/internal/domain/partition"
 
 // PartitionView is a read-only snapshot of a single partition's offsets, for
 // the monitor HTTP listener's /varz endpoint.

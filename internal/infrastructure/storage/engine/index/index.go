@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pulse-stream/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
 )
 
 // EntrySize is the byte length of one index entry.

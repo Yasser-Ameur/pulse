@@ -7,7 +7,7 @@ package metrics
 import (
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
 )
 
 // NoopRecorder is the MetricsRecorder implementation used in Phase 1. It

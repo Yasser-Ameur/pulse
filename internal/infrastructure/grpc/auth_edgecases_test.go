@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 )
 
 // TestUnaryAuthRejectsMalformedAuthorizationHeader pins the interceptor's

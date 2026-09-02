@@ -3,10 +3,10 @@ package log
 import (
 	"context"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/storage"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/storage"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 // Factory is the ports.LogFactory implementation backed by the segment log

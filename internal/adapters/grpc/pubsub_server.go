@@ -3,14 +3,14 @@ package grpc
 import (
 	"context"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
-	"github.com/pulse-stream/pulse/internal/application/services"
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/application/services"
+	"github.com/Yasser-Ameur/pulse/internal/domain/consumer"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

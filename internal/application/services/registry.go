@@ -7,9 +7,9 @@ package services
 import (
 	"sync"
 
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/storage"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/storage"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 // Structured logging field keys shared across services.

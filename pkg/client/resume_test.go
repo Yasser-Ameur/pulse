@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/testutil"
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/internal/testutil"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

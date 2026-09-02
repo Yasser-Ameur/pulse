@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
 )
 
 // maxFuzzMillis keeps generated timestamps inside the range time.UnixMilli

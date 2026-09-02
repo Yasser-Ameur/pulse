@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/checksum"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/checksum"
 )
 
 func sampleBatch() *message.RecordBatch {

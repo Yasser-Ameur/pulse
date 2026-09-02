@@ -10,9 +10,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/retention"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/retention"
 )
 
 // CompactionResult reports what one call to Log.Compact did.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/retention"
+	"github.com/Yasser-Ameur/pulse/internal/domain/retention"
 )
 
 func TestNewName(t *testing.T) {

@@ -20,9 +20,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/checksum"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/checksum"
 )
 
 // Batch format constants.

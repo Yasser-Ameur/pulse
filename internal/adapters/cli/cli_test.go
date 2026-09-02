@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulse-stream/pulse/internal/testutil"
+	"github.com/Yasser-Ameur/pulse/internal/testutil"
 )
 
 // run executes the CLI root command with args against a fresh command tree,

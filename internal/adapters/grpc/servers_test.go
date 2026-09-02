@@ -7,13 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/pulse-stream/pulse/internal/application/services"
-	"github.com/pulse-stream/pulse/internal/infrastructure/logging"
-	"github.com/pulse-stream/pulse/internal/infrastructure/metrics"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/log"
-	storagemeta "github.com/pulse-stream/pulse/internal/infrastructure/storage/metadata"
-	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/internal/application/services"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/logging"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/metrics"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/log"
+	storagemeta "github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/metadata"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/timeutil"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 )
 
 // newTestApp assembles a real broker facade (metadata store + log factory on

@@ -1,4 +1,4 @@
-module github.com/pulse-stream/pulse
+module github.com/Yasser-Ameur/pulse
 
 go 1.26.5
 

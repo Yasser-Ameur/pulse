@@ -3,12 +3,12 @@ package grpc
 import (
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/broker"
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/retention"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/internal/domain/broker"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/retention"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 )
 
 // toMessage converts a wire Message to the domain model, parsing the event id

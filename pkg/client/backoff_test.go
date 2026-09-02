@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/testutil"
+	"github.com/Yasser-Ameur/pulse/internal/testutil"
 )
 
 func TestNextBackoffDoublesAndCaps(t *testing.T) {

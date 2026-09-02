@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulse-stream/pulse/internal/server"
+	"github.com/Yasser-Ameur/pulse/internal/server"
 )
 
 // TestMainVersionFlag drives main() itself with --version, the one RunE path

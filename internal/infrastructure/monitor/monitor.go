@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/pulse-stream/pulse/internal/application/services"
-	"github.com/pulse-stream/pulse/internal/domain/broker"
+	"github.com/Yasser-Ameur/pulse/internal/application/services"
+	"github.com/Yasser-Ameur/pulse/internal/domain/broker"
 )
 
 // statusResponse is the body of /healthz and /readyz.

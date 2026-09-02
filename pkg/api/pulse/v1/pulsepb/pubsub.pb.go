@@ -434,7 +434,7 @@ const file_pulse_v1_pubsub_proto_rawDesc = "" +
 	"\x06PubSub\x12>\n" +
 	"\aPublish\x12\x18.pulse.v1.PublishRequest\x1a\x19.pulse.v1.PublishResponse\x12F\n" +
 	"\tSubscribe\x12\x1a.pulse.v1.SubscribeRequest\x1a\x1b.pulse.v1.SubscribeResponse0\x01\x122\n" +
-	"\x03Ack\x12\x14.pulse.v1.AckRequest\x1a\x15.pulse.v1.AckResponseB8Z6github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepbb\x06proto3"
+	"\x03Ack\x12\x14.pulse.v1.AckRequest\x1a\x15.pulse.v1.AckResponseB8Z6github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepbb\x06proto3"
 
 var (
 	file_pulse_v1_pubsub_proto_rawDescOnce sync.Once

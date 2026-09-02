@@ -436,7 +436,7 @@ const file_pulse_v1_model_proto_rawDesc = "" +
 	"\tpartition\x18\x02 \x01(\x05R\tpartition\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\x03R\x06offset\x12!\n" +
 	"\ftimestamp_ms\x18\x04 \x01(\x03R\vtimestampMs\x12+\n" +
-	"\amessage\x18\x05 \x01(\v2\x11.pulse.v1.MessageR\amessageB8Z6github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepbb\x06proto3"
+	"\amessage\x18\x05 \x01(\v2\x11.pulse.v1.MessageR\amessageB8Z6github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepbb\x06proto3"
 
 var (
 	file_pulse_v1_model_proto_rawDescOnce sync.Once

@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/codec"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/index"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/codec"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/index"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 // hotpathPayload is the message size the append path was measured with.

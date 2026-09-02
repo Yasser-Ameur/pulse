@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/domain/broker"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/retention"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 	"github.com/cockroachdb/pebble"
-	"github.com/pulse-stream/pulse/internal/application/ports"
-	"github.com/pulse-stream/pulse/internal/domain/broker"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/retention"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
 )
 
 func testTopic(name string, partitions int) topic.Topic {

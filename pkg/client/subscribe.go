@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

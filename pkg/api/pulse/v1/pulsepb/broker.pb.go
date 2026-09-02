@@ -540,7 +540,7 @@ const file_pulse_v1_broker_proto_rawDesc = "" +
 	"\n" +
 	"ListTopics\x12\x1b.pulse.v1.ListTopicsRequest\x1a\x1c.pulse.v1.ListTopicsResponse\x12G\n" +
 	"\n" +
-	"BrokerInfo\x12\x1b.pulse.v1.BrokerInfoRequest\x1a\x1c.pulse.v1.BrokerInfoResponseB8Z6github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepbb\x06proto3"
+	"BrokerInfo\x12\x1b.pulse.v1.BrokerInfoRequest\x1a\x1c.pulse.v1.BrokerInfoResponseB8Z6github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepbb\x06proto3"
 
 var (
 	file_pulse_v1_broker_proto_rawDescOnce sync.Once

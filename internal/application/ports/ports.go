@@ -11,13 +11,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/broker"
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/storage"
-	"github.com/pulse-stream/pulse/internal/domain/timeutil"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/domain/broker"
+	"github.com/Yasser-Ameur/pulse/internal/domain/consumer"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/storage"
+	"github.com/Yasser-Ameur/pulse/internal/domain/timeutil"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 // Clock re-exports the domain time port so that services can depend on the

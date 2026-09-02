@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/retention"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/snapshot"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/retention"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/snapshot"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 func testCfg() Config {

@@ -11,9 +11,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulse-stream/pulse/internal/infrastructure/monitor"
-	"github.com/pulse-stream/pulse/internal/testutil"
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/monitor"
+	"github.com/Yasser-Ameur/pulse/internal/testutil"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 )
 
 func get(t *testing.T, h http.Handler, path string) int {

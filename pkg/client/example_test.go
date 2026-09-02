@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/testutil"
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/internal/testutil"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 )
 
 // Example demonstrates the publish/subscribe/ack cycle against a broker

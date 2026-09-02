@@ -17,17 +17,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/retention"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/codec"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/recovery"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/segment"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/snapshot"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/retention"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/codec"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/recovery"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/segment"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/snapshot"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 // Defaults applied when a Config field is left zero.

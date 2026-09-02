@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
 )
 
 func TestParseLevel(t *testing.T) {

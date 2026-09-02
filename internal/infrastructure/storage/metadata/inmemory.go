@@ -8,11 +8,11 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/pulse-stream/pulse/internal/domain/broker"
-	"github.com/pulse-stream/pulse/internal/domain/consumer"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/domain/broker"
+	"github.com/Yasser-Ameur/pulse/internal/domain/consumer"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 // InMemoryMetadataStore is a non-durable MetadataStore implementation guarded

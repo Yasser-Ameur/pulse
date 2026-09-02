@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
 )
 
 func TestMessageValidate(t *testing.T) {

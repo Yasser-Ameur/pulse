@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
-	"github.com/pulse-stream/pulse/internal/application/services"
-	grpctransport "github.com/pulse-stream/pulse/internal/infrastructure/grpc"
-	"github.com/pulse-stream/pulse/internal/infrastructure/logging"
-	"github.com/pulse-stream/pulse/internal/infrastructure/metrics"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/log"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/metadata"
-	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/application/services"
+	grpctransport "github.com/Yasser-Ameur/pulse/internal/infrastructure/grpc"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/logging"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/metrics"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/log"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/metadata"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/timeutil"
 )
 
 // Options configures an in-process broker instance.

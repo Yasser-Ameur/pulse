@@ -15,7 +15,7 @@ export GOFLAGS GOSUMDB GOPROXY CGO_ENABLED
 CGO_ENABLED := $(CGO)
 
 VERSION ?= $(shell git describe --tags --always --dirty)
-LDFLAGS := -s -w -X github.com/pulse-stream/pulse/internal/server.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/Yasser-Ameur/pulse/internal/server.Version=$(VERSION)
 
 .PHONY: build
 build:

@@ -3,7 +3,7 @@ package client_test
 import (
 	"testing"
 
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 )
 
 // TestPartitionForKeyIsStable pins the FNV-1a routing mapping for three known

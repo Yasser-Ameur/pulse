@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/infrastructure/config"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/config"
 	"github.com/spf13/cobra"
 )
 

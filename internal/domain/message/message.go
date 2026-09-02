@@ -14,7 +14,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/pulse-stream/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
 )
 
 // Structural limits enforced for every message regardless of topic

@@ -1,7 +1,7 @@
 // Package client is the public Go client for the Pulse broker. It speaks the
 // pulse.v1 gRPC protocol (docs/Protocol.md) and exposes plain public types, so
 // any external Go program can depend on it without importing anything under
-// github.com/pulse-stream/pulse/internal.
+// github.com/Yasser-Ameur/pulse/internal.
 //
 // Dial with WithToken to authenticate against a broker that requires it, and
 // call PartitionForKey to route a message to the same partition as every

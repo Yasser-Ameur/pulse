@@ -4,9 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 // TestDeleteLogRemovesEmptyTopicDir pins that deleting the last partition also

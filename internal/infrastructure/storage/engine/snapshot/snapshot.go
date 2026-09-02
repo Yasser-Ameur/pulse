@@ -16,9 +16,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/checksum"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/checksum"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 // Snapshot format constants. The file is 40 bytes, all big-endian.

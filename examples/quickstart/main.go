@@ -2,7 +2,7 @@
 // running broker: create a topic, publish a batch, replay it, and advance a
 // consumer cursor. Start the broker first (make build && bin/pulse-server).
 //
-// It depends only on the public github.com/pulse-stream/pulse/pkg/client
+// It depends only on the public github.com/Yasser-Ameur/pulse/pkg/client
 // package, so it builds as-is against any Pulse broker without importing
 // anything internal.
 package main
@@ -14,7 +14,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

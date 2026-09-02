@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 // dirDeleteOutcome is what reopening a mutilated store directory did.

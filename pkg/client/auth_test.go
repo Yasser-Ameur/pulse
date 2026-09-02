@@ -6,8 +6,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

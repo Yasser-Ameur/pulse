@@ -10,10 +10,10 @@ import (
 	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	grpctransport "github.com/pulse-stream/pulse/internal/infrastructure/grpc"
-	"github.com/pulse-stream/pulse/internal/infrastructure/timeutil"
-	"github.com/pulse-stream/pulse/internal/testutil"
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	grpctransport "github.com/Yasser-Ameur/pulse/internal/infrastructure/grpc"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/timeutil"
+	"github.com/Yasser-Ameur/pulse/internal/testutil"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 )
 
 func TestDefaultOptions(t *testing.T) {

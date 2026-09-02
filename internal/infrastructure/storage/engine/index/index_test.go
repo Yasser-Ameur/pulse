@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
 )
 
 func TestAppendAndLookup(t *testing.T) {

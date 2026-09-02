@@ -4,7 +4,7 @@ package timeutil
 import (
 	"time"
 
-	domaintimeutil "github.com/pulse-stream/pulse/internal/domain/timeutil"
+	domaintimeutil "github.com/Yasser-Ameur/pulse/internal/domain/timeutil"
 )
 
 // SystemClock is the production clock backed by the wall clock.

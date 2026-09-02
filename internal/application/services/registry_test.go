@@ -3,8 +3,8 @@ package services
 import (
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 func TestLogRegistryLifecycle(t *testing.T) {

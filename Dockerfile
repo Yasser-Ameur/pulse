@@ -6,7 +6,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/pulse-stream/pulse/internal/server.Version=${VERSION}" -o /out/pulse-server ./cmd/pulse-server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/Yasser-Ameur/pulse/internal/server.Version=${VERSION}" -o /out/pulse-server ./cmd/pulse-server
 # The runtime image runs as nonroot (uid 65532) and cannot create /data itself,
 # so the directory is created here and copied in with the right owner.
 RUN mkdir -p /out/data

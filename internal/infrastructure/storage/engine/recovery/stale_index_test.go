@@ -6,12 +6,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/index"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/segment"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/snapshot"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/index"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/segment"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/snapshot"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 // These tests drive runWithSnapshot against index files that disagree with the

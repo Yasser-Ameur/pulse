@@ -4,7 +4,7 @@ package logging
 import (
 	"strings"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

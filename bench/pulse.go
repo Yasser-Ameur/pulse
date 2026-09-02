@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 )
 
 // pulseTarget runs pulse-server with sync-mode: every-write, which fsyncs the

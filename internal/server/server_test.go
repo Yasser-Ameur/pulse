@@ -20,7 +20,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulse-stream/pulse/internal/infrastructure/config"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/config"
 )
 
 // freePort returns an address bound to an ephemeral, currently-free TCP

@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/message"
-	"github.com/pulse-stream/pulse/internal/domain/offset"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/checksum"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/codec"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/index"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/segment"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/snapshot"
-	"github.com/pulse-stream/pulse/internal/infrastructure/storage/filesystem"
+	"github.com/Yasser-Ameur/pulse/internal/domain/message"
+	"github.com/Yasser-Ameur/pulse/internal/domain/offset"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/checksum"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/codec"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/index"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/segment"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/engine/snapshot"
+	"github.com/Yasser-Ameur/pulse/internal/infrastructure/storage/filesystem"
 )
 
 // testIndexInterval puts one index entry on every batch, so a rebuilt index is

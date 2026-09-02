@@ -8,7 +8,7 @@ under `internal/`. `pulse-cli` (`internal/adapters/cli`) is built on it.
 ## Install
 
 ```bash
-go get github.com/pulse-stream/pulse/pkg/client
+go get github.com/Yasser-Ameur/pulse/pkg/client
 ```
 
 ## Dial
@@ -215,7 +215,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/pulse-stream/pulse/pkg/client"
+    "github.com/Yasser-Ameur/pulse/pkg/client"
 )
 
 func main() {

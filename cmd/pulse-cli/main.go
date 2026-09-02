@@ -2,7 +2,7 @@
 package main
 
 import (
-	"github.com/pulse-stream/pulse/internal/adapters/cli"
+	"github.com/Yasser-Ameur/pulse/internal/adapters/cli"
 )
 
 func main() {

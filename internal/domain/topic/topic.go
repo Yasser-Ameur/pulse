@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pulse-stream/pulse/internal/domain/retention"
+	"github.com/Yasser-Ameur/pulse/internal/domain/retention"
 )
 
 // Limits applied to topic names and configuration.

@@ -3,8 +3,8 @@ package grpc
 import (
 	"context"
 
-	"github.com/pulse-stream/pulse/internal/application/services"
-	"github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb"
+	"github.com/Yasser-Ameur/pulse/internal/application/services"
+	"github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb"
 )
 
 // BrokerServer implements the pulse.v1 Broker administration service.

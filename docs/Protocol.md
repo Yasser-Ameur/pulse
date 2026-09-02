@@ -7,7 +7,7 @@ versioning, and compatibility rules.
 ## 1. Package and services
 
 All messages live in package `pulse.v1` (Go import
-`github.com/pulse-stream/pulse/pkg/api/pulse/v1/pulsepb`). Two services are
+`github.com/Yasser-Ameur/pulse/pkg/api/pulse/v1/pulsepb`). Two services are
 exposed:
 
 | Service | RPC | Kind | Purpose |

@@ -5,7 +5,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/pulse-stream/pulse/internal/application/ports"
+	"github.com/Yasser-Ameur/pulse/internal/application/ports"
 )
 
 // PrometheusRecorder implements ports.MetricsRecorder over a caller-supplied

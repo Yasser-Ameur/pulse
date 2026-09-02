@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pulse-stream/pulse/internal/domain/partition"
-	"github.com/pulse-stream/pulse/internal/domain/topic"
+	"github.com/Yasser-Ameur/pulse/internal/domain/partition"
+	"github.com/Yasser-Ameur/pulse/internal/domain/topic"
 )
 
 func newTestTopicManager(t *testing.T) (*TopicManager, *fakeStore, *fakeFactory, *LogRegistry) {

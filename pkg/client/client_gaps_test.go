@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulse-stream/pulse/internal/testutil"
-	"github.com/pulse-stream/pulse/pkg/client"
+	"github.com/Yasser-Ameur/pulse/internal/testutil"
+	"github.com/Yasser-Ameur/pulse/pkg/client"
 )
 
 func dial(t *testing.T, addr string, opts ...client.Option) *client.Client {
