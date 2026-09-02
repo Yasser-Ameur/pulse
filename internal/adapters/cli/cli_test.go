@@ -181,6 +181,58 @@ func TestBuildTLSConfigSkipVerify(t *testing.T) {
 	require.True(t, cfg.InsecureSkipVerify)
 }
 
+// TestExecuteHelp drives the package's process-entry Execute() with --help,
+// the one path that returns without calling os.Exit(1), so it is safe to run
+// in the test process; every other behaviour Execute wires up (signal
+// context, error printing) is exercised through run() against a real broker.
+func TestExecuteHelp(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"pulse-cli", "--help"}
+	Execute()
+}
+
+// TestCLISubscribeFollowRunsUntilContextCanceled drives --follow, which
+// blocks past the last available record waiting for more; canceling the
+// command's context (as SIGINT/SIGTERM would in Execute) is the only way it
+// stops.
+func TestCLISubscribeFollowRunsUntilContextCanceled(t *testing.T) {
+	inst := testutil.Start(t, testutil.Options{})
+	_, err := run(t, inst.Addr, "topics", "create", "orders", "--partitions", "1")
+	require.NoError(t, err)
+	_, err = run(t, inst.Addr, "publish", "orders", "-m", "payload-1")
+	require.NoError(t, err)
+
+	root := NewRootCmd()
+	root.SetArgs([]string{"--addr", inst.Addr, "subscribe", "orders", "--follow", "--from", "0"})
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	origStdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = origStdout }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- root.ExecuteContext(ctx) }()
+
+	select {
+	case err := <-done:
+		// The canceled context surfaces as an error from Subscribe (mapped
+		// through client.wrapErr); what this test pins is that --follow
+		// actually stops instead of blocking forever.
+		require.Error(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscribe --follow did not stop when its context was canceled")
+	}
+
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	require.Contains(t, string(out), "payload-1")
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "cli-test-*.pem")
