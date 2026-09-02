@@ -57,7 +57,7 @@ func TestRunServesUntilSIGTERM(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return resp.StatusCode == http.StatusOK
 	}, 5*time.Second, 20*time.Millisecond, "monitor /healthz never answered 200")
 
@@ -69,6 +69,50 @@ func TestRunServesUntilSIGTERM(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run() did not return within the shutdown grace period after SIGTERM")
 	}
+}
+
+// TestRunReturnsErrorOnDataDirCreationFailure pins that Run fails fast, before
+// opening any listener, when its data directory cannot be created (here,
+// because a plain file already occupies that path).
+func TestRunReturnsErrorOnDataDirCreationFailure(t *testing.T) {
+	parent := t.TempDir()
+	blocked := filepath.Join(parent, "blocked")
+	require.NoError(t, os.WriteFile(blocked, []byte("x"), 0o600))
+
+	cfg := config.Default()
+	cfg.DataDir = filepath.Join(blocked, "data") // blocked is a file, not a dir
+	cfg.ListenAddr = freePort(t)
+	cfg.MonitorAddr = freePort(t)
+
+	require.Error(t, Run(cfg))
+}
+
+// TestRunReturnsErrorOnInvalidTLSConfig pins that a bad TLS certificate path
+// fails Run before either listener opens, and that it cleans up the broker it
+// had already started.
+func TestRunReturnsErrorOnInvalidTLSConfig(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = freePort(t)
+	cfg.MonitorAddr = freePort(t)
+	cfg.TLS = config.TLS{CertFile: "/does/not/exist.pem", KeyFile: "/does/not/exist.key"}
+
+	require.Error(t, Run(cfg))
+}
+
+// TestRunReturnsErrorOnListenAddrInUse pins that Run surfaces the gRPC
+// listener's bind error rather than hanging, by occupying the address first.
+func TestRunReturnsErrorOnListenAddrInUse(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = ln.Close() }()
+
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ListenAddr = ln.Addr().String()
+	cfg.MonitorAddr = freePort(t)
+
+	require.Error(t, Run(cfg))
 }
 
 // writeSelfSignedCert generates an ephemeral self-signed certificate and
