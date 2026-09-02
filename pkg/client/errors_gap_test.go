@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -21,6 +22,25 @@ func TestWrapErrNilIsNil(t *testing.T) {
 func TestWrapErrUnmappedCodePassesThrough(t *testing.T) {
 	orig := status.Error(codes.Internal, "boom")
 	require.Equal(t, orig, wrapErr(orig))
+}
+
+func TestShouldResume(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"context canceled never resumes", context.Canceled, false},
+		{"deadline exceeded never resumes", context.DeadlineExceeded, false},
+		{"unavailable resumes", status.Error(codes.Unavailable, "draining"), true},
+		{"a different status code does not resume", status.Error(codes.NotFound, "gone"), false},
+		{"a non-status transport error resumes", errors.New("connection reset"), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, shouldResume(tt.err))
+		})
+	}
 }
 
 func TestStatusErrorMessageAndUnwrap(t *testing.T) {
