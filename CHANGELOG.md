@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-02
+
+### Fixed
+
+- The release workflow downloads only the build matrix archives, so the
+  release job no longer fails on the Docker build record artifact that the
+  container job uploads alongside them. v0.3.0 carries the module rename
+  but no release assets because of this.
+
 ## [0.3.0] - 2026-09-02
 
 ### Changed
