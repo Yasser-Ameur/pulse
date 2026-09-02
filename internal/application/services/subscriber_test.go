@@ -204,6 +204,27 @@ func TestAckValidatesInput(t *testing.T) {
 	if _, err := s.Ack(context.Background(), "w", name, pid, offset.Invalid); err == nil {
 		t.Fatal("Ack(invalid offset) error = nil, want error")
 	}
+	if _, err := s.Ack(context.Background(), "w", name, partition.ID(9), offset.Offset(1)); !errors.Is(err, partition.ErrNotFound) {
+		t.Fatalf("Ack(bad partition) error = %v, want partition.ErrNotFound", err)
+	}
+}
+
+// TestSubscriberCursorBeyondLogEndFails pins that a stored consumer cursor
+// past the current log end (e.g. after a truncation) is reported as
+// out-of-range rather than silently starting from a clamped position.
+func TestSubscriberCursorBeyondLogEndFails(t *testing.T) {
+	s, _, store, lg := newTestSubscriber(t)
+	name := mustName(t, "orders")
+	appendRecords(t, lg, 2)
+	if err := store.SaveCursor(context.Background(), "w", name, partition.ID(0), offset.Offset(50)); err != nil {
+		t.Fatalf("SaveCursor() error = %v", err)
+	}
+
+	sub := consumer.Subscription{Consumer: "w", Topic: name, Partition: partition.ID(0)}
+	err := s.Subscribe(context.Background(), sub, func([]message.Record) error { return nil })
+	if !errors.Is(err, offset.ErrOutOfRange) {
+		t.Fatalf("Subscribe() error = %v, want offset.ErrOutOfRange", err)
+	}
 }
 
 func offsetsOf(recs []message.Record) []int64 {
