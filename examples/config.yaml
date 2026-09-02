@@ -19,3 +19,10 @@ tls:
   cert-file: ""
   key-file: ""
   client-ca-file: ""
+# Auth restricts publish/consume to clients bearing one of these tokens; an
+# empty resolved set (the default) leaves the broker unauthenticated. In
+# production, prefer setting tokens via PULSE_AUTH_TOKENS (comma-separated)
+# or PULSE_AUTH_TOKEN_FILE rather than committing them here.
+# auth:
+#   tokens: []
+#   token-file: ""

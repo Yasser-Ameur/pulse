@@ -17,4 +17,10 @@ tls:
   cert-file: ""
   key-file: ""
   client-ca-file: ""
+# Auth is left off for this codespaces/dev-container config; set the
+# PULSE_AUTH_TOKENS environment variable (comma-separated tokens) to turn it
+# on without editing this file.
+# auth:
+#   tokens: []
+#   token-file: ""
 
