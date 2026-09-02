@@ -94,6 +94,55 @@ func TestCLIInfo(t *testing.T) {
 	require.Contains(t, out, "topics:  0")
 }
 
+func TestCLIConnectTLSConfigErrorPropagates(t *testing.T) {
+	inst := testutil.Start(t, testutil.Options{})
+	_, err := run(t, inst.Addr, "topics", "list", "--tls-ca", "/does/not/exist.pem")
+	require.Error(t, err)
+}
+
+func TestCLITopicsCreateAlreadyExistsError(t *testing.T) {
+	inst := testutil.Start(t, testutil.Options{})
+	_, err := run(t, inst.Addr, "topics", "create", "orders")
+	require.NoError(t, err)
+
+	_, err = run(t, inst.Addr, "topics", "create", "orders")
+	require.Error(t, err)
+}
+
+func TestCLITopicsDeleteMissingError(t *testing.T) {
+	inst := testutil.Start(t, testutil.Options{})
+	_, err := run(t, inst.Addr, "topics", "delete", "missing")
+	require.Error(t, err)
+}
+
+func TestCLIAckMissingTopicError(t *testing.T) {
+	inst := testutil.Start(t, testutil.Options{})
+	_, err := run(t, inst.Addr, "ack", "missing", "--consumer", "c1", "--offset", "0")
+	require.Error(t, err)
+}
+
+// TestCLIPublishReadsFromStdin drives the stdin-payload branch of publish:
+// with no -m flag and a non-empty, non-terminal stdin, the command reads the
+// payload from stdin instead of sending an empty message.
+func TestCLIPublishReadsFromStdin(t *testing.T) {
+	inst := testutil.Start(t, testutil.Options{})
+	_, err := run(t, inst.Addr, "topics", "create", "orders")
+	require.NoError(t, err)
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = w.WriteString("stdin-payload")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	origStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = origStdin }()
+
+	out, err := run(t, inst.Addr, "publish", "orders")
+	require.NoError(t, err)
+	require.Contains(t, out, "published offset")
+}
+
 func TestCLITokenFlagDefaultsFromEnv(t *testing.T) {
 	t.Setenv("PULSE_TOKEN", "env-token")
 	root := NewRootCmd()
