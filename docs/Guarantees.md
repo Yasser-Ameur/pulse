@@ -196,7 +196,41 @@ no LEO/HW (log-end-offset/high-watermark) rules. Nothing in the current
 codebase claims otherwise. That distinction is an intended design for a
 future replicated partition, not a gap in today's single-copy log.
 
-## 8. What this does not give you
+## 8. Compaction
+
+For a topic created with `Cleanup: compact`, `Log.Compact`
+(`internal/infrastructure/storage/engine/log/compact.go`) makes these promises,
+on top of everything above:
+
+- **The latest value per key survives.** For every key that has ever been
+  published, the record with the highest offset is never dropped, whichever
+  segment it lives in.
+- **Keyless records are preserved.** A record with `Message.Key == ""` is
+  never deduplicated or removed by compaction.
+- **Offsets are never renumbered.** A compacted segment keeps its original
+  `[base, nextOffset)` span; a removed record leaves a hole, and `Log.Read`
+  simply returns the next surviving offset.
+- **A tombstone holds its window.** A keyed record with a nil payload
+  suppresses every older record for its key for at least
+  `storage.compaction-tombstone-retention` (default 24h) before it, and the
+  values it superseded, are eligible for removal.
+
+What it does **not** promise:
+
+- **A reader can see a hole.** Reading a compacted log at a removed offset
+  never returns that offset's original record; `Read` returns the next
+  surviving one instead. Code that assumes every offset in a segment's range
+  is individually readable will be surprised by a compacted topic.
+- **Compaction lag is bounded only by the interval.** A record superseded a
+  moment after publish can still be read until the next
+  `storage.compaction-interval` sweep rewrites its segment, and a
+  multi-segment topic converges over several sweeps, not one, because each
+  call rewrites at most `MaxSegmentsPerRun` (4) sealed segments
+  (`docs/Storage.md` §8). There is no tighter bound than the configured
+  interval, and the gain gate can skip a near-clean segment for more than one
+  sweep.
+
+## 9. What this does not give you
 
 Deliberate omissions. Each is a decision, not a gap, and `docs/Roadmap.md` maps
 the ones that are scheduled to the phase that adds them.
