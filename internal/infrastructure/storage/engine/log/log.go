@@ -203,9 +203,16 @@ func CreateLog(root string, name topic.Name, pid partition.ID, cfg Config, logge
 	return l, nil
 }
 
-// DeleteLog removes the partition directory and all its data.
+// DeleteLog removes the partition directory and all its data, and the topic
+// directory once its last partition is gone.
 func DeleteLog(root string, name topic.Name, pid partition.ID) error {
-	return os.RemoveAll(filesystem.PartitionDir(root, name, pid))
+	if err := os.RemoveAll(filesystem.PartitionDir(root, name, pid)); err != nil {
+		return err
+	}
+	// Remove refuses a non-empty directory, which is exactly the case where
+	// other partitions still live there.
+	_ = os.Remove(filesystem.TopicDir(root, name))
+	return nil
 }
 
 func newBaseSegment(dir string, base offset.Offset, cfg Config) (*segment.Segment, error) {
