@@ -34,6 +34,8 @@ which wins if both are set).
 | `tls.cert-file` | `PULSE_TLS_CERT_FILE` | string | `""` | PEM server certificate path. Empty (with `key-file` empty) serves plaintext. | Must be set together with `key-file`. |
 | `tls.key-file` | `PULSE_TLS_KEY_FILE` | string | `""` | PEM server private key path. | Must be set together with `cert-file`. |
 | `tls.client-ca-file` | `PULSE_TLS_CLIENT_CA_FILE` | string | `""` | PEM CA bundle; when set, requires and verifies client certificates (mTLS). | Requires `cert-file` and `key-file` to be set. |
+| `auth.tokens` | `PULSE_AUTH_TOKENS` (comma separated) | []string | `[]` | Bearer tokens accepted directly from configuration. An empty merged token set disables authentication. | None. |
+| `auth.token-file` | `PULSE_AUTH_TOKEN_FILE` | string | `""` | Path to a file with one bearer token per line, merged into `auth.tokens`. | File must be readable if set. |
 
 A duration value is a Go duration string such as `100ms` or `10s`, both in
 YAML and in the environment; it is parsed with `time.ParseDuration`.
@@ -116,6 +118,42 @@ tls:
 The client side (`pkg/client.WithTLS` and the `pulse-cli` `--tls-*` flags) is
 covered in [Client.md](Client.md).
 
+## Authentication
+
+`auth.tokens` and `auth.token-file` (merged into one set by
+`Config.loadAuthTokenFile`, `internal/infrastructure/config/config.go`) name
+the bearer tokens the gRPC transport accepts. An empty merged set (the
+default) disables authentication entirely, and `server.Run`
+(`internal/server/server.go`) logs a warning at startup naming that state:
+"authentication disabled; any client can publish and consume".
+
+**Token file format**: one token per line; blank lines and lines starting
+with `#` are ignored, so a token file can carry comments and blank
+separators without extra parsing on your side.
+
+```
+# production tokens, one per line
+prod-warehouse-9f2a
+prod-billing-7c31
+```
+
+**The Bearer contract**: every unary and streaming RPC on `Broker` and
+`PubSub` must carry an `authorization` metadata key of the form `Bearer
+<token>`, checked in constant time against the merged token set
+(`authenticate`, `unaryAuthInterceptor`, `streamAuthInterceptor` in
+`internal/infrastructure/grpc/server.go`). A missing key, a malformed value,
+or a token outside the set fails the call with `codes.Unauthenticated`
+("missing or invalid token") before it reaches the broker. The standard
+`grpc.health.v1.Health` service and gRPC reflection are exempt
+(`authExemptPrefixes`), so a load balancer or `grpc_health_probe` needs no
+token.
+
+Set a token with `auth.tokens` or `PULSE_AUTH_TOKENS` (comma separated) for
+one or two tokens, or `auth.token-file` / `PULSE_AUTH_TOKEN_FILE` for a
+managed list. The public Go client authenticates with
+`client.WithToken("...")`, and `pulse-cli` with `--token` or `PULSE_TOKEN`
+(see [Client.md](Client.md)).
+
 ## Monitor endpoints
 
 `monitor-addr` (default `127.0.0.1:9091`) binds a plain HTTP listener served
@@ -152,7 +190,13 @@ in every other state, with `status` naming it.
     {"name": "orders", "partitions": [{"id": 0, "end_offset": 42}]}
   ],
   "go_version": "go1.26",
-  "num_goroutine": 12
+  "num_goroutine": 12,
+  "connections": 3,
+  "subscriptions": 2,
+  "published_records": 10482,
+  "published_bytes": 1048576,
+  "delivered_records": 10480,
+  "delivered_bytes": 1048320
 }
 ```
 
@@ -160,6 +204,13 @@ in every other state, with `status` naming it.
 is no start offset: the storage `Log` port exposes only the log end
 (`NextOffset`), not a trimmed low-water mark
 (`internal/application/services/monitor_view.go`).
+
+`connections`, `subscriptions`, `published_records`, `published_bytes`,
+`delivered_records`, and `delivered_bytes` are broker-wide counters
+(`services.Broker.Stats`, `internal/application/services/broker.go`;
+`connections` is `Server.Connections` in
+`internal/infrastructure/grpc/server.go`), served in `varzResponse`
+(`internal/infrastructure/monitor/monitor.go`).
 
 `GET /metrics`: Prometheus exposition format, served by
 `promhttp.HandlerFor` over the same registry the broker's own counters are
