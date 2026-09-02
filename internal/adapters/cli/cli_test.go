@@ -185,7 +185,7 @@ func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "cli-test-*.pem")
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = f.WriteString(content)
 	require.NoError(t, err)
 	return f.Name()
