@@ -31,7 +31,9 @@ every-write`, and before fsync under `sync-mode: interval` (losing up to
 be delivered before it is durable** — there is no high watermark in the log.
 
 Not provided, deliberately: exactly-once delivery, clustering, replication,
-consumer groups, and authentication. TLS is provided (see Highlights below).
+consumer groups, and per-topic authorization (any valid token can do
+everything). TLS and token authentication are provided (see Highlights
+below).
 
 Read [docs/Guarantees.md](docs/Guarantees.md) before writing a consumer — it
 states each of these precisely, names the code that implements them, and lists
@@ -66,8 +68,14 @@ what Pulse does not give you.
   `--tls-skip-verify`) dial with the same credentials (see
   [Client.md](docs/Client.md)).
 - **A public Go client**: `pkg/client` is a standalone, importable SDK with
-  automatic retry on `Unavailable` and transparent `Subscribe` resume (see
-  [Client.md](docs/Client.md)).
+  automatic full-jitter retry on `Unavailable` and transparent `Subscribe`
+  resume (see [Client.md](docs/Client.md)).
+- **Token authentication**: `auth.tokens` / `auth.token-file` require a
+  `Bearer <token>` on every RPC once set; off by default, with a startup
+  warning while it is off (see [Configuration.md](docs/Configuration.md)).
+- **Multi-partition topics**: 1 to 256 partitions per topic, each with its
+  own order and cursor; `client.PartitionForKey` and `pulse-cli publish --key`
+  route by key on the caller's side (see [Client.md](docs/Client.md)).
 
 ## Quickstart
 
@@ -112,6 +120,12 @@ err = c.Subscribe(ctx, "orders", 0, client.SubscribeOptions{Consumer: "warehouse
     })
 ```
 
+Or bring up a broker plus Prometheus with Docker Compose:
+
+```bash
+docker compose -f examples/docker-compose.yaml up
+```
+
 See [examples/](examples/) for configs and runnable programs, and
 [Client.md](docs/Client.md) for the full client reference.
 
@@ -151,11 +165,14 @@ make lint     # golangci-lint
 make test     # go test ./...
 make test-race # go test -race ./...
 make coverage # coverage report (coverage.out, coverage.html)
+make coverage-check # coverage report, failing below COVERAGE_FLOOR
+make image    # build the container image
 ```
 
 CI (GitHub Actions) checks formatting, vets and lints, runs unit and
-integration tests, runs them again with the race detector, and builds both
-binaries. It does not collect coverage; run `make coverage` locally for that.
+integration tests, runs them again with the race detector, enforces a
+coverage floor (`make coverage-check`, `COVERAGE_FLOOR` in the `Makefile`),
+runs the bench harness, and builds both binaries.
 
 ## License
 
