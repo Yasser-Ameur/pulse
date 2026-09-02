@@ -401,6 +401,13 @@ func (b *Broker) stopSweeper() {
 	b.sweepStop = nil
 }
 
+// Sweep runs one maintenance pass immediately (retention trim and
+// compaction) rather than waiting for the background ticker. Exposed for
+// tests that need deterministic control over when maintenance runs.
+func (b *Broker) Sweep() {
+	b.sweep()
+}
+
 // sweep applies each topic's maintenance policy to its partition logs:
 // retention trim for CleanupDelete topics, compaction for CleanupCompact
 // ones. It is called by the background sweeper and is safe to call directly

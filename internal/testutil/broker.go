@@ -29,6 +29,10 @@ type Options struct {
 	// IndexInterval sets the sparse index entry spacing for partition logs;
 	// zero uses the engine default.
 	IndexInterval int64
+	// MaxSegmentBytes rotates a partition's active segment past this many
+	// bytes; zero uses the engine default. Tests that need multiple sealed
+	// segments (e.g. compaction) set this small.
+	MaxSegmentBytes int64
 }
 
 // Instance is a running broker with its gRPC transport.
@@ -59,7 +63,10 @@ func Start(t *testing.T, opts Options) *Instance {
 	if err != nil {
 		t.Fatalf("open metadata: %v", err)
 	}
-	factory := log.NewFactory(dir, log.Config{IndexInterval: opts.IndexInterval}, logger)
+	factory := log.NewFactory(dir, log.Config{
+		IndexInterval:   opts.IndexInterval,
+		MaxSegmentBytes: opts.MaxSegmentBytes,
+	}, logger)
 	app := services.NewBroker(services.BrokerOptions{
 		MetadataStore: meta,
 		LogFactory:    factory,
