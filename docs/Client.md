@@ -73,6 +73,29 @@ offsets, err := c.Publish(ctx, "orders", p, msg)
 `--partition` is not, the CLI resolves the topic's partition count and calls
 `PartitionForKey` itself (`internal/adapters/cli/pubsub.go`).
 
+### Publishing a tombstone
+
+For a `compact` topic (`docs/Storage.md` §8), a tombstone is a keyed record
+with a nil payload. The client does not have a dedicated tombstone call; leave
+`Payload` unset on a `client.Message` that carries a `Key`:
+
+```go
+_, err := c.Publish(ctx, "sessions", 0, client.Message{Key: "user-42"})
+```
+
+`toPBMessage` (`pkg/client/convert.go`) passes `m.Payload` straight through to
+`pulsepb.Message.Payload`, a proto3 `bytes` field. Proto3 gives that field no
+presence tracking, so a nil `[]byte` and an explicitly empty `[]byte{}` are
+indistinguishable once the message crosses gRPC: both decode to a nil
+`Message.Payload` on the broker side
+(`internal/adapters/grpc/convert.go`), and `codec.encodeRecord`
+(`internal/infrastructure/storage/engine/codec`) then writes a nil payload as
+`nullField`, the tombstone marker (`docs/Storage.md` §3). A message with a
+`Key` and no `Payload` field set at all is therefore the same thing as one
+with `Payload: []byte{}`: both are tombstones. A record with an empty `Key`
+is never a tombstone regardless of its payload, because keyless records are
+never deduplicated.
+
 ## Subscribe
 
 ```go
