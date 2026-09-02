@@ -15,6 +15,19 @@ import (
 	"github.com/pulse-stream/pulse/internal/domain/retention"
 )
 
+// CompactionResult reports what one call to Log.Compact did.
+type CompactionResult struct {
+	// Segments is the number of sealed segments rewritten.
+	Segments int
+	// BytesBefore is the total size of the rewritten segments before
+	// compaction.
+	BytesBefore int64
+	// BytesAfter is their total size after compaction.
+	BytesAfter int64
+	// TombstonesRemoved is the number of expired tombstones dropped.
+	TombstonesRemoved int
+}
+
 // Log is an append-only, durable, ordered sequence of record batches.
 //
 // Implementations must guarantee that an acknowledged append is durable, that
@@ -53,6 +66,13 @@ type Log interface {
 	// Truncate removes all records at or after to, returning the log to the
 	// state it would have had had those records never been appended.
 	Truncate(to offset.Offset) error
+
+	// Compact deduplicates the sealed segments of a compacted log, keeping
+	// only the newest record per key (docs/compaction-design.md). It never
+	// touches the active segment and never changes offsets or the log's end.
+	// It is safe for concurrent use and returns a zero result when there is
+	// nothing to do or another call is already in progress.
+	Compact(ctx context.Context) (CompactionResult, error)
 
 	// Close flushes and releases all resources associated with the log.
 	Close() error

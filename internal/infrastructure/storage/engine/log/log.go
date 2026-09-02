@@ -64,6 +64,15 @@ type Config struct {
 	SyncMode SyncMode
 	// SyncInterval is the fsync period for SyncInterval mode.
 	SyncInterval time.Duration
+	// TombstoneRetention is how long a tombstone (a keyed record with a nil
+	// payload) survives compaction before it, and the values it superseded,
+	// are dropped for good. Only meaningful for a compacted log.
+	TombstoneRetention time.Duration
+	// MinCompactGain is the minimum fraction a segment must shrink by for a
+	// compaction rewrite to be kept; below this, and with no expired
+	// tombstones removed, the rewrite is discarded and the segment is left
+	// untouched until a later run.
+	MinCompactGain float64
 }
 
 // ApplyDefaults fills zero fields with engine defaults.
@@ -79,6 +88,12 @@ func (c Config) ApplyDefaults() Config {
 	}
 	if c.SyncMode == SyncInterval && c.SyncInterval <= 0 {
 		c.SyncInterval = 100 * time.Millisecond
+	}
+	if c.TombstoneRetention <= 0 {
+		c.TombstoneRetention = DefaultTombstoneRetention
+	}
+	if c.MinCompactGain <= 0 {
+		c.MinCompactGain = DefaultMinCompactGain
 	}
 	return c
 }
@@ -105,6 +120,10 @@ type Log struct {
 	closed     bool
 	notify     chan struct{}
 	stopFlush  chan struct{}
+
+	// compacting serializes Compact calls: a call that finds it already set
+	// returns a zero result instead of blocking.
+	compacting bool
 }
 
 // OpenLog recovers the partition log at dir. If the directory does not exist

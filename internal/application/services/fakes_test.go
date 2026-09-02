@@ -73,6 +73,10 @@ type fakeLog struct {
 	trimErr    error
 	trimResult retention.TrimResult
 	lastPolicy retention.Policy
+
+	compactCalls  int
+	compactErr    error
+	compactResult storage.CompactionResult
 }
 
 func newFakeLog() *fakeLog { return &fakeLog{notify: make(chan struct{})} }
@@ -143,6 +147,13 @@ func (l *fakeLog) Trim(_ time.Time, p retention.Policy) (retention.TrimResult, e
 	l.trimCalls++
 	l.lastPolicy = p
 	return l.trimResult, l.trimErr
+}
+
+func (l *fakeLog) Compact(_ context.Context) (storage.CompactionResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.compactCalls++
+	return l.compactResult, l.compactErr
 }
 
 func (l *fakeLog) Truncate(to offset.Offset) error {
