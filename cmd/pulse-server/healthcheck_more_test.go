@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -58,4 +59,19 @@ func TestHealthcheckCmdNoMonitorAddrResolved(t *testing.T) {
 
 func TestHealthcheckCmdInvalidConfigFilePropagatesError(t *testing.T) {
 	require.Error(t, runHealthcheck(t, "--config", "/does/not/exist.yaml"))
+}
+
+// TestCheckHealthConnectionFailure covers checkHealth's other error branch:
+// the request never reaching a server at all, not just a bad status code.
+func TestCheckHealthConnectionFailure(t *testing.T) {
+	err := checkHealth("http://127.0.0.1:1", 100*time.Millisecond)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "readyz request failed")
+}
+
+// TestHealthBaseURLMalformedAddrFallsBackToRawInput covers healthBaseURL's
+// net.SplitHostPort failure path: an address with no parseable port is used
+// as-is, just prefixed with the scheme.
+func TestHealthBaseURLMalformedAddrFallsBackToRawInput(t *testing.T) {
+	require.Equal(t, "http://not-a-host-port", healthBaseURL("not-a-host-port"))
 }
