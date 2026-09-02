@@ -158,6 +158,37 @@ func TestPubSubServerAckUnknownTopicMapsError(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestBrokerServerListTopicsAndInfoErrorWhenNotRunning pins that both
+// ListTopics and BrokerInfo (which itself calls ListTopics to count topics)
+// propagate the broker's not-running guard through mapError, instead of only
+// being exercised while the broker is up.
+func TestBrokerServerListTopicsAndInfoErrorWhenNotRunning(t *testing.T) {
+	app := newTestApp(t)
+	s := NewBrokerServer(app)
+	require.NoError(t, app.Shutdown(context.Background()))
+
+	_, err := s.ListTopics(context.Background(), &pulsepb.ListTopicsRequest{})
+	require.Error(t, err)
+
+	_, err = s.BrokerInfo(context.Background(), &pulsepb.BrokerInfoRequest{})
+	require.Error(t, err)
+}
+
+func TestPubSubServerSubscribeUnknownPartitionMapsError(t *testing.T) {
+	app := newTestApp(t)
+	bs := NewBrokerServer(app)
+	ps := NewPubSubServer(app, timeutil.SystemClock{})
+	ctx := context.Background()
+	_, err := bs.CreateTopic(ctx, &pulsepb.CreateTopicRequest{Name: "orders", Partitions: 1})
+	require.NoError(t, err)
+
+	stream := &fakeSubscribeStream{ctx: ctx}
+	// Partition 5 was never created, so the broker's own lookup fails after
+	// sub.Validate() passes, exercising Subscribe's other mapError call.
+	err = ps.Subscribe(&pulsepb.SubscribeRequest{Topic: "orders", Partition: 5, Consumer: "c1"}, stream)
+	require.Error(t, err)
+}
+
 func TestPubSubServerSubscribeInvalidSubscriptionMapsError(t *testing.T) {
 	app := newTestApp(t)
 	bs := NewBrokerServer(app)
