@@ -5,8 +5,8 @@ segment files, the same family of design as Kafka and Redpanda, sized and
 documented for a solo maintainer. This document is the storage contract:
 the format, the layout, and the recovery guarantees. Phase 1 implements
 append, sequential/random read, indexing, rotation, fsync, and crash recovery;
-Phase 2 adds the retention sweeper and recovery snapshots. Compaction and
-memory-mapping are specified here and implemented in later phases.
+Phase 2 adds the retention sweeper, recovery snapshots, and log compaction.
+Memory-mapping is specified here and left for a later phase.
 
 ## 1. Guarantees
 
@@ -91,7 +91,14 @@ headers           headerCount × (keyLen uint32, key, valueLen uint32, value)
 ```
 
 The `offsetDelta` is checked against `recordCount` during decode so that a
-corrupt batch cannot fabricate offsets outside its own range.
+corrupt batch cannot fabricate offsets outside its own range. That check
+assumes a contiguous batch (see §8): a compacted batch instead sets flag bit
+`0x0008` ("sparse offsets"), which relaxes the bound to `offsetDelta < 1<<31`
+so a rewritten batch can legitimately skip the offsets compaction removed.
+`valueLength = 0xFFFFFFFF` (the same null marker used for `keyLength`) encodes
+a **tombstone**: a keyed record whose payload is nil, written by
+`codec.encodeRecord` (`internal/infrastructure/storage/engine/codec`). A
+zero-length but non-nil payload is not a tombstone.
 
 ### CRC32C
 
@@ -245,12 +252,101 @@ never cut mid-batch, and a torn tail after a valid checkpoint is handled without
 a full scan. Sealed-segment corruption is only detected when the data is read,
 not at startup.
 
-### Compaction (future)
+### Compaction (implemented)
 
-For compacted topics, a background pass rewrites segments keeping only the last
-record per key, then atomically swaps the old segments for new ones and truncates
-the corresponding index. The log address space is preserved: offsets of surviving
-records do not change.
+For a topic created with `Cleanup: compact` (`topic.CleanupCompact`), a
+background sweeper calls `Log.Compact`
+(`internal/infrastructure/storage/engine/log/compact.go`) on each partition,
+paced by `storage.compaction-interval` (default 30s; see docs/Configuration.md).
+One call is a bounded, incremental pass:
+
+1. **Dedupe map.** Every sealed segment is streamed oldest to newest, then the
+   durable prefix of the active segment (bytes `[0, activeSize)` captured at
+   the start), to find each key's newest offset, whether that occurrence is a
+   tombstone, and its timestamp. Keyless records (`Message.Key == ""`) are
+   never deduplicated. The map is capped at `MaxCompactionKeys` (`1<<18`); a
+   range that would overflow it aborts the call and a later sweep retries, so
+   memory stays bounded regardless of segment size.
+2. **Rewrite.** Sealed segments are then re-encoded oldest first, up to
+   `MaxSegmentsPerRun` (4) per call. A record survives if it is keyless, or if
+   it is the dedupe map's newest occurrence for its key and (when that newest
+   occurrence is a tombstone) still younger than
+   `storage.compaction-tombstone-retention` (default 24h). An older duplicate,
+   or a tombstone past its retention window, is dropped. Dropping an
+   expired tombstone also drops the values it superseded, so nothing is
+   resurrected. Survivors are re-encoded into fresh sparse-offset batches
+   bounded by `CompactBatchRecords` (1000) / `CompactBatchBytes` (1 MiB).
+3. **Gain gate.** If the rewrite would not shrink the segment by at least
+   `storage.compaction-min-gain-ratio` (default 0.1) and removed no expired
+   tombstones, the rewrite is discarded and the segment is left untouched for
+   a later sweep.
+4. **Empty segment.** If every record in a sealed segment is dropped, the
+   segment is deleted outright, the same as a retention trim of that segment.
+5. **Copy-and-swap commit.** A surviving rewrite is written to a temp data
+   file and a temp index file in the partition directory (`.tmp-compact-*`,
+   never a `.log` suffix, so `filesystem.SegmentFiles` ignores it during
+   recovery) and fsynced. The commit then takes the log's scan lock (excluding
+   any in-flight read of the segment) and writer lock, closes the old segment,
+   `os.Rename`s both temp files over the originals, fsyncs the directory, and
+   opens the renamed data file with the original LEO and the new index
+   entries. Only the two renamed files and the in-memory segment pointer
+   change; `l.nextOffset`, the log's LEO, and every other segment are
+   untouched.
+
+**Offsets are preserved and never renumbered.** A compacted segment still
+spans `[base, nextOffset)`, but the offsets inside are sparse: an offset a
+compaction removed is simply absent, and `Read` already skips forward to the
+next surviving offset (`r.Offset < from`). **The active segment is never
+compacted.** Because sealed segments are deduplicated against the whole log
+including the active segment's durable prefix, a key whose newest record is
+still in the active segment keeps that record whichever way; a reader that
+reads the full log always sees the newest value for every key, even before
+the sealed segments converge to a single copy.
+
+**Recovery of an interrupted compaction.** `recovery.Run` deletes any
+`.tmp-*` file in the partition directory before scanning (compaction temps
+and the existing atomic-write temps alike; deleting an unrenamed temp is
+always safe). Sealed segments are no longer assumed contiguous: each sealed
+segment's LEO is derived from the next segment's base offset (from file
+names), not from its own data, and the scan accepts a batch whose base is
+`>=` the previous batch's end and `<` that LEO, advancing by the last
+decoded record's `Offset + 1`. `restoreFromIndex` additionally checks every
+index entry's on-disk record header against its expected offset (not just
+the first batch, as before compaction); any mismatch falls back to
+`restoreByScan`, which is what recovers correctly from a crash between the
+data rename and the index rename.
+
+**Interaction with retention.** Retention and compaction share one broker
+maintenance loop (`Broker.sweep`, `internal/application/services/broker.go`)
+and never run concurrently, so a segment can never be trimmed away mid
+compaction; the commit also re-checks under the writer lock that its segment
+is still present before swapping. Trim's age check reads a compacted
+segment's surviving timestamps, which stays correct because dropped records
+are only older duplicates.
+
+**Interaction with snapshots.** The snapshot records `LEO` / `ActiveBase` /
+`ActiveSize` / `ActiveNext` only, none of which compaction changes, so no
+snapshot format change was needed and a snapshot is not rewritten after a
+compaction. Sealed segments are still restored from their index files at
+startup, now validated by the hardened per-entry check above.
+
+**What is not compacted.** The active segment is never rewritten; only
+sealed segments are. A single-segment topic (one that has not yet rotated)
+therefore never compacts until it rotates.
+
+Two deviations from the original design
+(`docs/compaction-design.md` §13) shipped:
+
+- Pass 1's dedupe map streams **every** sealed segment on every call, not
+  only the bounded candidate set that pass 2 rewrites, because a key's newest
+  occurrence can live in a segment outside this call's rewrite window. Only
+  the rewrite in pass 2 is bounded by `MaxSegmentsPerRun`; a multi-segment
+  topic converges over several sweeps.
+- Fault-injected mid-execution crash testing (pausing `Compact` between the
+  data and index rename via an in-process hook) was not built.
+  `tests/integration/compaction_test.go` reproduces the same crash windows by
+  file surgery instead: planting orphan `.tmp-compact-*` files, and reverting
+  an index file to its pre-compaction bytes after a clean compaction.
 
 ### Memory mapping (future)
 
