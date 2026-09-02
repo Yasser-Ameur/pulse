@@ -92,8 +92,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+      # Only the build matrix archives. The container job also uploads a
+      # Docker build record artifact, and downloading it here fails the job.
       - uses: actions/download-artifact@v4
         with:
+          pattern: pulse-*
           path: artifacts
           merge-multiple: true
       - name: Checksums
