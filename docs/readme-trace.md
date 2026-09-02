@@ -212,3 +212,21 @@ pulsecheck-prometheus-1   Up 8 seconds             0.0.0.0:9092->9090/tcp
 completed with success, so the published revision equals `HEAD`. The try-it
 block in the README is therefore the pull, and the clone serves only the CLI
 build.
+
+## R17. Audit re-verification of the try-it block (2026-09-02, later session)
+
+The full README "Try it" sequence was re-run end to end in a fresh audit
+session against the current `master` (`10ffe9d`): `docker pull
+ghcr.io/yasser-ameur/pulse:latest`, `docker run` the broker, `curl` `/healthz`
+(200), then the CLI build-and-run block from a fresh `git clone` through the
+`golang:1.26` container. The command sequence and its structure matched
+README.md:19-39 exactly; only the record's timestamp differed, since it is
+wall-clock time at publish, not a stored value:
+
+```
+created topic shipment-events (1 partitions)
+published offset 0
+0	2026-09-02T15:03:25Z	{"status":"packed"}
+```
+
+README.md:44-47 updated to this run's timestamp.

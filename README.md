@@ -43,7 +43,7 @@ That last block, run this session, printed:
 ```
 created topic shipment-events (1 partitions)
 published offset 0
-0	2026-09-02T12:12:12Z	{"status":"packed"}
+0	2026-09-02T15:03:25Z	{"status":"packed"}
 ```
 
 Every command above and in the rest of this README was run this session on
