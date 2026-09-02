@@ -198,39 +198,24 @@ func TestStaleIndexPastEndOfDataFallsBackToScan(t *testing.T) {
 	}
 }
 
-// TestStaleIndexEntryAheadOfItsBatchIsTrustedAndHidesRecords is the gap.
+// TestStaleIndexEntryAheadOfItsBatchIsRejectedAndRescanned closes the gap this
+// test used to document.
 //
-// restoreFromIndex validates a loaded index with exactly two checks: the first
-// batch's base offset matches the segment name, and every entry's position is
-// below the file size. Nothing checks that an entry's position is where its
-// offset actually lives. An entry that points past its own batch therefore
-// passes, and MarkIndexPersisted then tells the segment the file is current, so
-// the wrong index is never rewritten.
-//
-// The harm is not a decode failure. Log.Read starts at the indexed position and
-// drops records below the requested offset, so an entry pointing too far
-// forward makes the requested record silently invisible: the read returns later
-// records and no error. Compare the data file, where every batch carries a CRC
-// that recovery verifies; the index file has no checksum, and this is the only
-// validation it gets.
-//
-// Two things let the bad entry through. index.Decode rejects only a decreasing
-// RelativeOffset, and index.Append compares positions only when two entries
-// share an offset, so neither enforces the strictly-increasing invariant the
-// index package documents. The entry below is built through index.Append to
-// show it is accepted there, not merely tolerated on the way in.
-//
-// This is not reachable by killing the process: persistIndex goes through
-// filesystem.AtomicWriteFile, so the file on disk is always some complete,
-// self-consistent encoding. It is reachable by anything that changes the bytes
-// underneath, such as bit rot, a bad sector, or an index restored from backup
-// beside a newer segment.
-func TestStaleIndexEntryAheadOfItsBatchIsTrustedAndHidesRecords(t *testing.T) {
+// restoreFromIndex now checks, for every loaded entry, that the batch header at
+// its claimed position actually carries the offset the entry says it does
+// (docs/compaction-design.md sec 7 step 3). An entry that points past its own
+// batch fails that check, so restoreFromIndex reports restored=false and the
+// caller falls back to restoreByScan, which rebuilds a correct index from the
+// data. This is also what heals the crash-between-renames window a compaction
+// swap can leave (new data file, old index file): the same per-entry check
+// catches a genuinely stale index, not just this hand-planted one.
+func TestStaleIndexEntryAheadOfItsBatchIsRejectedAndRescanned(t *testing.T) {
 	dir := t.TempDir()
 	s := buildSegment(t, dir, 0, []string{"a"}, []string{"b"}, []string{"c"})
 	// The entry for the second batch points at the third batch's start. Offsets
-	// increase, positions increase, and both are inside the file, so every
-	// check between here and the recovered segment passes.
+	// increase, positions increase, and both are inside the file, so the two
+	// original checks (name match, position below file size) both pass; only
+	// the new per-entry header check catches it.
 	staleIdxWriteEntries(t, dir, s.base, []index.Entry{
 		{RelativeOffset: uint32(s.bases[0] - s.base), RelativePosition: uint32(s.starts[0])},
 		{RelativeOffset: uint32(s.bases[1] - s.base), RelativePosition: uint32(s.starts[2])},
@@ -251,20 +236,15 @@ func TestStaleIndexEntryAheadOfItsBatchIsTrustedAndHidesRecords(t *testing.T) {
 		t.Fatalf("full scan yielded %d records, want %d", len(got), len(s.bases))
 	}
 
+	// The stale index was rejected and rebuilt by the scan fallback, so the
+	// planted entry is gone: the offset now resolves to its own batch.
 	pos, seen := staleIdxLookupAndScan(t, seg, s.bases[1])
-	if pos != s.starts[2] {
-		t.Fatalf("PositionFor(%v) = %d, want the planted %d", s.bases[1], pos, s.starts[2])
+	if pos != s.starts[1] {
+		t.Fatalf("PositionFor(%v) = %d, want the rebuilt %d", s.bases[1], pos, s.starts[1])
 	}
-	if staleIdxContains(seen, s.bases[1]) {
-		t.Fatalf("offset %v was reachable from the planted position %d; the gap this test "+
-			"documents is closed, so replace it with the assertion that recovery rejected "+
-			"the index", s.bases[1], pos)
+	if !staleIdxContains(seen, s.bases[1]) {
+		t.Fatalf("offset %v not reachable from the rebuilt position %d; got %v", s.bases[1], pos, seen)
 	}
-	// Recovery reported a healthy segment and no truncation, yet a read of
-	// s.bases[1] now starts past it and returns only later records.
-	t.Logf("recovery accepted an index entry that points past its own batch: "+
-		"Read(%v) would start at byte %d and yield %v, silently skipping %v",
-		s.bases[1], pos, seen, s.bases[1])
 }
 
 // TestStaleIndexRejectedByAppendIsFatalInsteadOfRescanned is the second gap,

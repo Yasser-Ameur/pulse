@@ -24,6 +24,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pulse-stream/pulse/internal/domain/offset"
 	"github.com/pulse-stream/pulse/internal/infrastructure/storage/engine/codec"
@@ -49,6 +50,9 @@ type Result struct {
 // when a valid snapshot matches the on-disk state. An empty directory yields
 // no segments.
 func Run(dir string, indexInterval int64) (*Result, error) {
+	if err := cleanOrphans(dir); err != nil {
+		return nil, err
+	}
 	st, present, err := snapshot.Load(dir)
 	if err != nil {
 		if errors.Is(err, snapshot.ErrCorrupt) {
@@ -78,6 +82,10 @@ func runFull(dir string, indexInterval int64) (res *Result, err error) {
 	if err != nil {
 		return nil, err
 	}
+	bases, err := parseBases(files)
+	if err != nil {
+		return nil, err
+	}
 	res = &Result{}
 	var opened []*segment.Segment
 	defer func() {
@@ -89,9 +97,14 @@ func runFull(dir string, indexInterval int64) (res *Result, err error) {
 	}()
 	for i, path := range files {
 		last := i == len(files)-1
-		base, err := filesystem.ParseSegmentName(filepath.Base(trimExt(path)))
-		if err != nil {
-			return nil, err
+		base := bases[i]
+		// A sealed segment's LEO is the next segment's base, independent of
+		// what its own data contains: a fully-compacted-away tail leaves no
+		// trace, but the offset range it once covered is never renumbered.
+		// The active segment's LEO is unknown ahead of the scan.
+		leoBound := offset.Invalid
+		if !last {
+			leoBound = bases[i+1]
 		}
 		seg, err := segment.Open(path, base, indexInterval)
 		if err != nil {
@@ -102,10 +115,13 @@ func runFull(dir string, indexInterval int64) (res *Result, err error) {
 			_ = seg.Close()
 			return nil, err
 		}
-		nextOffset, entries, validSize, torn, err := scan(seg.File(), size.Size(), base, indexInterval, last)
+		nextOffset, entries, validSize, torn, err := scan(seg.File(), size.Size(), base, leoBound, indexInterval, last)
 		if err != nil {
 			_ = seg.Close()
 			return nil, fmt.Errorf("recover %s: %w", path, err)
+		}
+		if !last {
+			nextOffset = leoBound
 		}
 		if torn {
 			res.Truncated = true
@@ -123,6 +139,44 @@ func runFull(dir string, indexInterval int64) (res *Result, err error) {
 		res.Segments = append(res.Segments, seg)
 	}
 	return res, nil
+}
+
+// parseBases parses every segment file's base offset from its name, in the
+// same order as files.
+func parseBases(files []string) ([]offset.Offset, error) {
+	bases := make([]offset.Offset, len(files))
+	for i, path := range files {
+		b, err := filesystem.ParseSegmentName(filepath.Base(trimExt(path)))
+		if err != nil {
+			return nil, err
+		}
+		bases[i] = b
+	}
+	return bases, nil
+}
+
+// cleanOrphans removes any file in dir whose name starts with ".tmp-":
+// compaction's copy-and-swap temps and the transient index-rebuild temps from
+// filesystem.AtomicWriteFile. Deleting one is always safe — a temp is never
+// renamed into place before it is complete and fsynced — so a crash mid-write
+// simply leaves garbage for the next recovery to sweep up.
+func cleanOrphans(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), ".tmp-") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 // runWithSnapshot recovers with st as the trusted checkpoint. It returns
@@ -165,7 +219,7 @@ func runWithSnapshot(dir string, indexInterval int64, st snapshot.State) (res *R
 			return nil, false, err
 		}
 		if !restored {
-			sr, err := restoreByScan(path, bases[i], indexInterval, false)
+			sr, err := restoreByScan(path, bases[i], bases[i+1], indexInterval, false)
 			if err != nil {
 				return nil, false, fmt.Errorf("recover %s: %w", path, err)
 			}
@@ -194,7 +248,7 @@ func runWithSnapshot(dir string, indexInterval int64, st snapshot.State) (res *R
 			return nil, false, err
 		}
 		if !restored {
-			sr, err := restoreByScan(activePath, st.ActiveBase, indexInterval, true)
+			sr, err := restoreByScan(activePath, st.ActiveBase, offset.Invalid, indexInterval, true)
 			if err != nil {
 				return nil, false, fmt.Errorf("recover %s: %w", activePath, err)
 			}
@@ -212,7 +266,7 @@ func runWithSnapshot(dir string, indexInterval int64, st snapshot.State) (res *R
 			return nil, false, err
 		}
 		if !loaded {
-			sr, err := restoreByScan(activePath, st.ActiveBase, indexInterval, true)
+			sr, err := restoreByScan(activePath, st.ActiveBase, offset.Invalid, indexInterval, true)
 			if err != nil {
 				return nil, false, fmt.Errorf("recover %s: %w", activePath, err)
 			}
@@ -227,7 +281,7 @@ func runWithSnapshot(dir string, indexInterval int64, st snapshot.State) (res *R
 		if err != nil {
 			return nil, false, err
 		}
-		next, tail, validSize, torn, err := scanFrom(seg.File(), st.ActiveSize, activeSize, st.ActiveBase, st.LEO, indexInterval, true)
+		next, tail, validSize, torn, err := scanFrom(seg.File(), st.ActiveSize, activeSize, st.ActiveBase, st.LEO, offset.Invalid, indexInterval, true)
 		if err != nil {
 			_ = seg.Close()
 			return nil, false, err
@@ -255,7 +309,10 @@ func runWithSnapshot(dir string, indexInterval int64, st snapshot.State) (res *R
 // restoreFromIndex restores a segment from its persisted index file. restored
 // is false when the index is missing or corrupt, so the caller falls back to
 // restoreByScan. The first batch's base offset is spot-checked against the
-// segment name so a misplaced file is caught without a full scan.
+// segment name so a misplaced file is caught without a full scan; every entry
+// is then checked against the batch header it claims to point at, so a stale
+// index left behind by a crash between the data and index renames of a
+// compaction swap (docs/compaction-design.md sec 6-7) is never trusted.
 func restoreFromIndex(path string, base, nextOffset offset.Offset, indexInterval int64) (*segment.Segment, bool, error) {
 	size, err := fileSize(path)
 	if err != nil {
@@ -278,19 +335,42 @@ func restoreFromIndex(path string, base, nextOffset offset.Offset, indexInterval
 		_ = seg.Close()
 		return nil, false, nil
 	}
-	for _, e := range ix.Entries() {
+	entries := ix.Entries()
+	for _, e := range entries {
 		if int64(e.RelativePosition) >= size {
 			_ = seg.Close()
 			return nil, false, nil
 		}
 	}
-	if err := seg.RecoverFrom(size, nextOffset, ix.Entries()); err != nil {
+	if !verifyIndexEntries(seg.File(), base, entries) {
+		_ = seg.Close()
+		return nil, false, nil
+	}
+	if err := seg.RecoverFrom(size, nextOffset, entries); err != nil {
 		_ = seg.Close()
 		return nil, false, err
 	}
 	// These entries came out of the index file itself, so it is already current.
 	seg.MarkIndexPersisted()
 	return seg, true, nil
+}
+
+// verifyIndexEntries checks that every entry actually points at a batch
+// header carrying the offset the entry claims, catching an index left stale
+// by a crash mid-rename.
+func verifyIndexEntries(f *os.File, base offset.Offset, entries []index.Entry) bool {
+	var header [codec.HeaderSize]byte
+	for _, e := range entries {
+		if _, err := f.ReadAt(header[:16], int64(e.RelativePosition)); err != nil {
+			return false
+		}
+		want := base + offset.Offset(e.RelativeOffset)
+		got := offset.Offset(binary.BigEndian.Uint64(header[8:16]))
+		if got != want {
+			return false
+		}
+	}
+	return true
 }
 
 // scanResult carries a segment restored by scanning plus any torn-tail result.
@@ -302,8 +382,10 @@ type scanResult struct {
 
 // restoreByScan opens a segment and rebuilds its state by scanning the data.
 // active controls whether a torn or corrupt tail is truncated (true) or fatal
-// (false).
-func restoreByScan(path string, base offset.Offset, indexInterval int64, active bool) (*scanResult, error) {
+// (false). leoBound is the segment's known LEO (the next segment's base) for
+// a sealed segment, or offset.Invalid for the active segment, whose LEO is
+// whatever the scan finds.
+func restoreByScan(path string, base, leoBound offset.Offset, indexInterval int64, active bool) (*scanResult, error) {
 	seg, err := segment.Open(path, base, indexInterval)
 	if err != nil {
 		return nil, err
@@ -314,10 +396,15 @@ func restoreByScan(path string, base offset.Offset, indexInterval int64, active 
 		return nil, err
 	}
 	size := st.Size()
-	next, entries, validSize, torn, err := scan(seg.File(), size, base, indexInterval, active)
+	next, entries, validSize, torn, err := scan(seg.File(), size, base, leoBound, indexInterval, active)
 	if err != nil {
 		_ = seg.Close()
 		return nil, err
+	}
+	if leoBound.Valid() {
+		// A sealed segment's LEO is the next segment's base, independent of
+		// its own data (a fully-compacted-away tail leaves no trace).
+		next = leoBound
 	}
 	sr := &scanResult{seg: seg, truncated: torn}
 	if torn {
@@ -365,8 +452,10 @@ func fileSize(path string) (int64, error) {
 }
 
 // firstBatchMatches reports whether the batch at position 0 of the file
-// carries the segment's base offset, catching a segment file that does not
-// start where its name claims.
+// carries a base offset at or after the segment's base, catching a segment
+// file that does not start where its name claims. A compacted segment may no
+// longer start with its own base offset if the record that once occupied it
+// was superseded.
 func firstBatchMatches(path string, base offset.Offset) bool {
 	f, err := os.Open(path)
 	if err != nil {
@@ -377,21 +466,29 @@ func firstBatchMatches(path string, base offset.Offset) bool {
 	if _, err := io.ReadFull(f, header[:]); err != nil {
 		return false
 	}
-	return header[0] == codec.Magic && offset.Offset(binary.BigEndian.Uint64(header[8:16])) == base
+	return header[0] == codec.Magic && offset.Offset(binary.BigEndian.Uint64(header[8:16])) >= base
 }
 
 // scan walks the raw batches of a segment file. For the active segment a torn
 // or corrupt tail is reported via torn=true so the caller truncates; for
-// sealed segments the same condition is a fatal error.
-func scan(f *os.File, size int64, base offset.Offset, indexInterval int64, active bool) (nextOffset offset.Offset, entries []index.Entry, validSize int64, torn bool, err error) {
-	return scanFrom(f, 0, size, base, base, indexInterval, active)
+// sealed segments the same condition is a fatal error. leoBound is the
+// segment's known LEO (offset.Invalid when unknown, i.e. the active segment),
+// used to reject a batch that claims an offset at or past it.
+func scan(f *os.File, size int64, base, leoBound offset.Offset, indexInterval int64, active bool) (nextOffset offset.Offset, entries []index.Entry, validSize int64, torn bool, err error) {
+	return scanFrom(f, 0, size, base, base, leoBound, indexInterval, active)
 }
 
 // scanFrom scans the batches of a segment file starting at the absolute
-// position from, expecting the batch at from to carry the base offset expected
-// (relativeOffset is always computed against base). It is used to verify only
-// the delta tail of an active segment that grew past its snapshot.
-func scanFrom(f *os.File, from, size int64, base, expected offset.Offset, indexInterval int64, active bool) (nextOffset offset.Offset, entries []index.Entry, validSize int64, torn bool, err error) {
+// position from, expecting the batch at from to carry the base offset
+// expected (relativeOffset is always computed against base). For a sealed
+// segment (active=false), holes are allowed between batches — and within a
+// batch, between records — because a compacted segment is a sparse subset of
+// its original offset range; only backward movement or a batch that would run
+// at or past leoBound (when known) is rejected. The active segment is never
+// compacted, so its scan keeps the original strict contiguity check; it is
+// also used to verify just the delta tail of an active segment that grew past
+// its snapshot.
+func scanFrom(f *os.File, from, size int64, base, expected, leoBound offset.Offset, indexInterval int64, active bool) (nextOffset offset.Offset, entries []index.Entry, validSize int64, torn bool, err error) {
 	if _, err := f.Seek(from, 0); err != nil {
 		return 0, nil, 0, false, err
 	}
@@ -422,19 +519,28 @@ func scanFrom(f *os.File, from, size int64, base, expected offset.Offset, indexI
 		if err != nil {
 			return truncateOrFatal(active, pos, expected, entries, err)
 		}
-		if batch.BaseOffset != expected {
-			return truncateOrFatal(active, pos, expected, entries, fmt.Errorf("%w: base offset %d, want %d", codec.ErrInvalidRecordLength, batch.BaseOffset, expected))
+		if active {
+			if batch.BaseOffset != expected {
+				return truncateOrFatal(active, pos, expected, entries, fmt.Errorf("%w: base offset %d, want %d", codec.ErrInvalidRecordLength, batch.BaseOffset, expected))
+			}
+		} else if batch.BaseOffset < expected {
+			return truncateOrFatal(active, pos, expected, entries, fmt.Errorf("%w: base offset %d before expected %d", codec.ErrInvalidRecordLength, batch.BaseOffset, expected))
+		}
+		if leoBound.Valid() && batch.BaseOffset >= leoBound {
+			return truncateOrFatal(active, pos, expected, entries, fmt.Errorf("%w: base offset %d at or past segment LEO %d", codec.ErrInvalidRecordLength, batch.BaseOffset, leoBound))
 		}
 		if pos >= nextIndexAt {
 			entries = append(entries, index.Entry{
-				RelativeOffset:   uint32(expected - base),
+				RelativeOffset:   uint32(batch.BaseOffset - base),
 				RelativePosition: uint32(pos),
 			})
 			nextIndexAt = pos + indexInterval
 		}
 		total := int64(codec.HeaderSize) + int64(batchLen)
 		pos += total
-		expected += offset.Offset(len(batch.Records))
+		// Advance from the last decoded record's offset, not base+recordCount:
+		// a compacted batch's records may themselves be non-contiguous.
+		expected = batch.Records[len(batch.Records)-1].Offset + 1
 	}
 	return expected, entries, pos, false, nil
 }
