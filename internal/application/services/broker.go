@@ -465,6 +465,10 @@ func (b *Broker) sweepCompaction(t topic.Topic) {
 		if !ok {
 			continue
 		}
+		b.logger.Debug("compaction started",
+			ports.Field{Key: logKeyTopic, Value: t.Name.String()},
+			ports.Field{Key: logKeyPartition, Value: pid.Int32()},
+		)
 		res, err := lg.Compact(context.Background())
 		if err != nil {
 			b.logger.Warn("compaction sweep failed",
