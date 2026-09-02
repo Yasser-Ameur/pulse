@@ -12,7 +12,7 @@ exposed:
 
 | Service | RPC | Kind | Purpose |
 |---|---|---|---|
-| `Broker` | `CreateTopic` | unary | Create a topic (Phase 1: 1 partition). |
+| `Broker` | `CreateTopic` | unary | Create a topic with 1 to `topic.MaxPartitions` (256) partitions. |
 | `Broker` | `DeleteTopic` | unary | Delete a topic and its data. |
 | `Broker` | `ListTopics` | unary | List topics and configurations. |
 | `Broker` | `BrokerInfo` | unary | Cluster/broker identity and state. |
@@ -98,6 +98,21 @@ cannot rewind a consumer.
 Delivery, durability, and duplicate semantics are stated in
 [Guarantees.md](Guarantees.md).
 
+## 3a. Authorization metadata
+
+Every RPC on `Broker` and `PubSub` may need to carry a gRPC metadata key,
+`authorization`, valued `Bearer <token>`. Whether it is required depends on
+the broker's own `auth.tokens` / `auth.token-file` configuration
+([Configuration.md](Configuration.md)): with the merged token set empty
+(the default) the key is ignored entirely, and with it non-empty the key is
+required and checked in constant time on every call
+(`authenticate`, `internal/infrastructure/grpc/server.go`). A missing key, a
+value that is not `Bearer <token>`, or a token outside the set fails with
+`codes.Unauthenticated`. The standard `grpc.health.v1.Health` service and
+reflection are exempt regardless of configuration, so a probe never needs a
+token. `pkg/client.WithToken` attaches this metadata for you; see
+[Client.md](Client.md).
+
 ## 4. Errors
 
 Domain errors are mapped to canonical gRPC codes by the adapter:
@@ -109,6 +124,7 @@ Domain errors are mapped to canonical gRPC codes by the adapter:
 | `topic.ErrAlreadyExists` | `AlreadyExists` |
 | `offset.ErrOutOfRange` | `OutOfRange` |
 | broker not `Running` | `Unavailable` |
+| missing or wrong bearer token, when `auth` is configured | `Unauthenticated` |
 | storage corruption / internal | `Internal` |
 | client context canceled | `Canceled` |
 

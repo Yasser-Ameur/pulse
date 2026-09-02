@@ -95,18 +95,23 @@ atomically.
 
 Two things this does not mean:
 
-- **Message keys do not route.** `Publish` takes an explicit partition id;
-  there is no partitioner and no key hashing anywhere in the code. `Key` is
-  advisory metadata carried through unchanged. Two messages with the same key
-  land in the same partition only because the caller put them there.
+- **The broker does not route by key.** `Publish` takes an explicit partition
+  id; the server has no partitioner. `Key` is advisory metadata carried
+  through unchanged. `client.PartitionForKey` (`pkg/client/partition.go`)
+  hashes a key with FNV-1a on the caller's side, so two messages with the
+  same key land in the same partition only because the caller computed that
+  partition and asked for it, never because the broker inferred it.
 - **Producer order is not preserved across concurrent publishes.** Order is the
   order in which batches acquire the writer lock, not the order in which
   clients called `Publish`.
 
-Today every topic has exactly one partition —`TopicManager.CreateTopic` rejects
-any other count — so per-partition order is currently total per topic. That
-stops being true the moment multi-partition topics land, and code should not
-depend on it.
+A topic may have 1 to `topic.MaxPartitions` (256) partitions
+(`TopicManager.CreateTopic`, `internal/application/services/topic_manager.go`).
+Order is total within a partition and undefined across partitions of the
+same topic: a single-partition topic happens to have total order overall,
+but nothing about a multi-partition one does. Do not depend on cross-partition
+order; route anything that must stay ordered relative to something else into
+the same partition (`client.PartitionForKey`, see [Client.md](Client.md)).
 
 ## 5. Duplicates and idempotency
 
@@ -217,9 +222,14 @@ the ones that are scheduled to the phase that adds them.
   checked when `tls.client-ca-file` is set (`server.buildTLSConfig`,
   `docs/Configuration.md`). Without it, anything on the network can read the
   traffic.
-- **Authentication and authorization.** None. Any client that can reach the
-  listener can create, delete, publish to, and read every topic, and can move
-  any consumer's cursor. Do not expose the listener outside a trusted network.
-- **Multi-partition topics.** `CreateTopic` accepts a partition count of 1 and
-  rejects anything else.
+- **Authentication and authorization.** Token authentication is available
+  (`auth.tokens`, `auth.token-file`, checked by `unaryAuthInterceptor` and
+  `streamAuthInterceptor` in `internal/infrastructure/grpc/server.go`) but is
+  **off by default**, and `server.Run` warns at startup while it is off.
+  Authorization is still all or nothing: any valid token can create, delete,
+  publish to, and read every topic, and move any consumer's cursor. There is
+  no per-topic or per-token scoping. Do not expose the listener outside a
+  trusted network, and do not hand a token to a client you would not trust
+  with the whole broker. Per-topic authorization is deferred to Phase 4; see
+  [Roadmap.md](Roadmap.md).
 - **Public API stability.** Out of scope until explicitly scoped.

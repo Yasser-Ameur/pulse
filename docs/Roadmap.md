@@ -22,6 +22,12 @@ What Storage.md already specifies but Phase 1 defers:
 - **Shipped**: stress tests — crash-at-any-point equivalence against a
   reference model (payloads and timestamps preserved, offsets contiguous).
 - **Shipped**: data-directory layout fix (topic/partition paths).
+- **Shipped**: multi-partition topics, 1 to `topic.MaxPartitions` (256) per
+  topic, with per-partition ordering and a cursor per `(consumer, topic,
+  partition)` (`internal/domain/topic`,
+  `internal/application/services/topic_manager.go`). See
+  [Guarantees.md](Guarantees.md) §4 and [Client.md](Client.md) for
+  `PartitionForKey`.
 - Remaining: compaction for compacted topics (last-writer-wins per key, address
   space preserved, design in [compaction-design.md](compaction-design.md)) and
   read-only memory mapping of sealed segments.
@@ -38,8 +44,12 @@ What Storage.md already specifies but Phase 1 defers:
 - Reconnect semantics in the public client are shipped (`pkg/client.Publish`
   retries on `Unavailable`; `Subscribe` with `Follow: true` resumes
   transparently); broker-side heartbeats remain.
-- Remaining: authentication hooks (`ports.Authentication` + gRPC
-  interceptors); rich flow-control tuning surfaced as configuration.
+- **Shipped**: token authentication on the gRPC transport (`auth.tokens`,
+  `auth.token-file`, `unaryAuthInterceptor`/`streamAuthInterceptor` in
+  `internal/infrastructure/grpc/server.go`), off by default. Authorization is
+  still all-or-nothing per token; see [Guarantees.md](Guarantees.md).
+- Remaining: per-topic authorization; rich flow-control tuning surfaced as
+  configuration.
 
 ## Phase 4 — Consumer groups
 
