@@ -11,14 +11,14 @@ append-only storage, and a deliberate, documented path toward clustering.
 
 ## Status
 
-**Phase 1 (core broker)** — single-node broker with a durable segment log,
+**Phase 1 (core broker)**: single-node broker with a durable segment log,
 topics, publish/subscribe with acknowledgements, a gRPC API, a CLI, and a full
 test suite. See [docs/Roadmap.md](docs/Roadmap.md).
 
 ## Guarantees
 
 Pulse delivers each record **at-least-once**, ordered **totally within a
-partition**, and deduplicated **nowhere** — **consumers must be idempotent**. A
+partition**, and deduplicated **nowhere**: **consumers must be idempotent**. A
 consumer that crashes between processing a record and acknowledging it will see
 that record again on resume.
 
@@ -28,14 +28,14 @@ after processing offset `N`, acknowledge `N+1`.
 Publishes are acknowledged after fsync under the default `sync-mode:
 every-write`, and before fsync under `sync-mode: interval` (losing up to
 `sync-interval` on a machine crash). Independently of the mode, **a record can
-be delivered before it is durable** — there is no high watermark in the log.
+be delivered before it is durable**: there is no high watermark in the log.
 
 Not provided, deliberately: exactly-once delivery, clustering, replication,
 consumer groups, and per-topic authorization (any valid token can do
 everything). TLS and token authentication are provided (see Highlights
 below).
 
-Read [docs/Guarantees.md](docs/Guarantees.md) before writing a consumer — it
+Read [docs/Guarantees.md](docs/Guarantees.md) before writing a consumer: it
 states each of these precisely, names the code that implements them, and lists
 what Pulse does not give you.
 
@@ -44,11 +44,11 @@ what Pulse does not give you.
 - **Durable by default**: under the default `sync-mode: every-write`, publishes
   are acknowledged only after fsync and acknowledged messages are never lost;
   torn writes are recovered by CRC-validated truncation. `sync-mode: interval`
-  trades that for throughput — see [Guarantees.md](docs/Guarantees.md) §2.
+  trades that for throughput. See [Guarantees.md](docs/Guarantees.md) §2.
 - **Append-only segment log** with sparse offset indexes, checksummed batches,
   and deterministic crash recovery.
 - **Clean architecture**: strict layering (`domain → application → adapters` +
-  `infrastructure`), ports for metadata storage, time, logging, and metrics —
+  `infrastructure`), ports for metadata storage, time, logging, and metrics,
   designed so replication, consumer groups, observability, and auth are new
   adapters, not rewrites.
 - **Single dependency for local dev**: Go only. No Docker required to build,
@@ -146,16 +146,16 @@ See [examples/](examples/) for configs and runnable programs, and
 
 ## Documentation
 
-- [Guarantees.md](docs/Guarantees.md) — delivery, durability, and non-goals
-- [Repository.md](docs/Repository.md) — layout and rules
-- [Architecture.md](docs/Architecture.md) — layers, domain model, extension points
-- [Storage.md](docs/Storage.md) — log format, indexes, recovery, retention
-- [Protocol.md](docs/Protocol.md) — gRPC contract and versioning
-- [Concurrency.md](docs/Concurrency.md) — goroutines, locks, shutdown
-- [Configuration.md](docs/Configuration.md) — every config key, TLS setup, monitor endpoints
-- [Operations.md](docs/Operations.md) — production shutdown, probes, metrics, limits, readiness checklist
-- [Client.md](docs/Client.md) — the public Go client and CLI TLS flags
-- [Roadmap.md](docs/Roadmap.md) — phase plan and extension points
+- [Guarantees.md](docs/Guarantees.md): delivery, durability, and non-goals
+- [Repository.md](docs/Repository.md): layout and rules
+- [Architecture.md](docs/Architecture.md): layers, domain model, extension points
+- [Storage.md](docs/Storage.md): log format, indexes, recovery, retention
+- [Protocol.md](docs/Protocol.md): gRPC contract and versioning
+- [Concurrency.md](docs/Concurrency.md): goroutines, locks, shutdown
+- [Configuration.md](docs/Configuration.md): every config key, TLS setup, monitor endpoints
+- [Operations.md](docs/Operations.md): production shutdown, probes, metrics, limits, readiness checklist
+- [Client.md](docs/Client.md): the public Go client and CLI TLS flags
+- [Roadmap.md](docs/Roadmap.md): phase plan and extension points
 
 ## Development
 

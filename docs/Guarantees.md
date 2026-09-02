@@ -13,14 +13,14 @@ read before writing a consumer.
 ## The statement
 
 > Pulse delivers each record **at-least-once**, ordered **totally within a
-> partition**, deduplicated **nowhere — the consumer must be idempotent**,
+> partition**, deduplicated **nowhere: the consumer must be idempotent**,
 > visible to readers **as soon as the write reaches the page cache, which is
 > before it reaches stable storage**, and on an ambiguous publish it reports an
 > error that does **not** distinguish "not appended" from "appended".
 
 The rest of this document is that sentence, slot by slot.
 
-## 1. Delivery — at-least-once
+## 1. Delivery: at-least-once
 
 The broker never re-pushes a record on its own: there is no redelivery timer,
 no nack, and no in-flight tracking. Duplicates arise from **resume**, and they
@@ -41,7 +41,7 @@ side effect is durable, never before.
 A subscription with an empty `consumer` field is not tracked at all: it replays
 from offset 0 on every run.
 
-## 2. Durability — two guarantees, chosen by `sync-mode`
+## 2. Durability: two guarantees, chosen by `sync-mode`
 
 `storage.sync-mode` selects between two genuinely different promises. Both are
 supported; they are not tuning knobs on one guarantee.
@@ -64,7 +64,7 @@ writes with `pebble.Sync`, so `Ack` does not return until the cursor is on
 stable storage.
 
 Crash recovery truncates a torn tail at the last CRC-valid batch
-(`docs/Storage.md` §7), so a lost record is lost cleanly — never half-read.
+(`docs/Storage.md` §7), so a lost record is lost cleanly: never half-read.
 
 ## 3. Cursors and the resume point
 
@@ -127,9 +127,9 @@ delivery.
   offsets.
 
 Idempotency is therefore entirely the consumer's job, and it needs a key the
-*caller* supplies or that is derived from the payload — a business key such as
+*caller* supplies or that is derived from the payload (a business key such as
 an order id, not `event_id` and not the offset, since a republish gets a fresh
-one of each. Deduplicate at a boundary you can name: a unique index, or a
+one of each). Deduplicate at a boundary you can name: a unique index, or a
 compare-and-set on a version.
 
 ## 6. The UNKNOWN outcome
@@ -145,7 +145,7 @@ A failed `Publish` has two shapes and the client cannot tell them apart:
   receive.
 
 Treat a publish error as UNKNOWN, not as failure. Retrying is correct, and
-duplicates it — which is fine, because §5 already requires consumers to tolerate
+duplicates it, which is fine, because §5 already requires consumers to tolerate
 them.
 
 ## 7. Known non-guarantee: reads can outrun the fsync
@@ -163,8 +163,8 @@ if l.cfg.SyncMode != SyncInterval {
 }
 ```
 
-Subscribers are woken **before** the batch is fsynced, and `l.nextOffset` — the
-bound `Log.Read` uses to decide what is readable — advances before it too.
+Subscribers are woken **before** the batch is fsynced, and `l.nextOffset`
+(the bound `Log.Read` uses to decide what is readable) advances before it too.
 There is **no high-watermark** in the log: `Read` is bounded by the log end
 (LEO), so nothing can hold a record back until it is durable. The snapshot code
 records this directly (`snapshot.go`: "LEO is also the high watermark").
@@ -179,7 +179,7 @@ The consequence, per mode:
   wake happens inside `l.mu.Lock()` and `Log.Read` takes `l.mu.RLock()`, so a
   woken subscriber blocks until `Append` releases the lock, which is after the
   `Sync`. Nothing in the code states this as an invariant, and the obvious
-  throughput change — moving the `fsync` out of the writer lock — opens the
+  throughput change (moving the `fsync` out of the writer lock) opens the
   window without touching a single line that looks related.
 - **`every-write`, failed fsync**: open today. On the `Sync` error path the
   offset has already advanced and the bytes are already in the page cache, so

@@ -38,7 +38,7 @@ a `Message`. Key points:
 
 - `event_id` is a string ULID; empty means broker-assigned.
 - `payload` is `bytes`; size is bounded by the broker's max message size.
-- `headers` is `map<string,string>` — order-insensitive by design.
+- `headers` is `map<string,string>`, order-insensitive by design.
 - Everything else is advisory and passed through.
 
 ## 3. Streaming strategy
@@ -68,7 +68,7 @@ The `follow` flag distinguishes the two modes:
 - `follow = true` (default): the stream stays open; the reader sleeps on the
   log's data-ready notification until new records are appended.
 - `follow = false`: the reader returns the log's current contents from the
-  requested offset and completes — a replay.
+  requested offset and completes: a replay.
 
 ### Cursor resume
 
@@ -84,7 +84,7 @@ first. A consumer that has processed through offset `N` therefore calls
 
 The same rule applies to `Ack` itself: the `offset` field of `AckRequest` is
 the next offset to consume. `AckResponse.cursor` echoes the stored cursor after
-the call. Acks are monotonic — an offset at or below the stored cursor is
+the call. Acks are monotonic: an offset at or below the stored cursor is
 ignored and the existing cursor is returned, so a late or duplicated `Ack`
 cannot rewind a consumer.
 

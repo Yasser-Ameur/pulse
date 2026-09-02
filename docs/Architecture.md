@@ -32,7 +32,7 @@ The broker is the only moving part in Phase 1: it accepts publishes, appends
 them to a durable log, serves ordered streams to consumers, and tracks consumer
 positions. Every future component (a second broker, a raft group, a metrics
 exporter) is an additional adapter or an additional infrastructure
-implementation — never a change to the domain.
+implementation: never a change to the domain.
 
 ## 2. Clean architecture
 
@@ -102,27 +102,27 @@ It knows nothing about segments, files, gRPC, or Pebble.
 
 The application layer contains ports and services.
 
-**Ports (`application/ports`)** — the seams between the application and the
+**Ports (`application/ports`)**: the seams between the application and the
 world:
 
-- `MetadataStore` — durable broker state (topics, partition metadata, consumer
+- `MetadataStore`: durable broker state (topics, partition metadata, consumer
   cursors, cluster/broker identity). Implementations: `PebbleMetadataStore`,
   `InMemoryMetadataStore` (tests).
-- `LogFactory` — creates/opens/deletes the persistent log for a partition.
-- `Clock` — injectable time.
-- `Logger` — structured logging.
-- `MetricsRecorder` — observability hook (Noop in Phase 1).
+- `LogFactory`: creates/opens/deletes the persistent log for a partition.
+- `Clock`: injectable time.
+- `Logger`: structured logging.
+- `MetricsRecorder`: observability hook (Noop in Phase 1).
 
-**Services (`application/services`)** — orchestration and business rules:
+**Services (`application/services`)**: orchestration and business rules:
 
-- `Broker` — facade: lifecycle state machine, identity, startup recovery and
+- `Broker`: facade, lifecycle state machine, identity, startup recovery and
   graceful shutdown, BrokerInfo.
-- `TopicManager` — create/delete/list topics across the metadata store and the
+- `TopicManager`: create/delete/list topics across the metadata store and the
   log factory.
-- `Publisher` — validates, assigns offsets/timestamps/event IDs, appends batches.
-- `Subscriber` — ordered streams from a cursor or explicit offset, cursor
+- `Publisher`: validates, assigns offsets/timestamps/event IDs, appends batches.
+- `Subscriber`: ordered streams from a cursor or explicit offset, cursor
   tracking on Ack.
-- `LogRegistry` — in-memory map of open logs, the sole owner of the topic→log
+- `LogRegistry`: in-memory map of open logs, the sole owner of the topic→log
   lifecycle.
 
 ## 5. Data plane vs. metadata plane
@@ -149,17 +149,17 @@ log engine never holds broker state.
 Pebble is an **implementation detail**. The application depends only on the
 `MetadataStore` port, so a future `InternalTopicMetadataStore` (log-compacted
 internal topics, Kafka-style `__consumer_offsets`) can replace it by changing
-dependency injection — not broker, application, or API code. The metadata
+dependency injection, not broker, application, or API code. The metadata
 schema is deliberately key-namespaced to make that migration mechanical.
 
 ## 6. Cluster identity and broker lifecycle
 
 Even though Phase 1 is a single node, the identity model is fully specified.
 
-- `ClusterID` — identifies the cluster (a ULID, generated once, persisted).
-- `BrokerID` — identifies this broker within the cluster (a ULID, generated on
+- `ClusterID`: identifies the cluster (a ULID, generated once, persisted).
+- `BrokerID`: identifies this broker within the cluster (a ULID, generated on
   first start, persisted).
-- `NodeID` — identifies the physical node; equal to `BrokerID` for single-node
+- `NodeID`: identifies the physical node; equal to `BrokerID` for single-node
   deployments, diverges when multiple brokers share a node (future).
 
 All three are exposed through `BrokerInfo` today so clients and tooling observe
@@ -203,7 +203,7 @@ semantics are left to producers and consumers.
 | `schema_version` | int32 | Passed through; registry validation later. |
 
 **ULID for `event_id`**: lexicographically sortable, timestamp-ordered,
-human-friendly, and locality-friendly for indexes — chosen over UUIDv4. See
+human-friendly, and locality-friendly for indexes, chosen over UUIDv4. See
 `docs/Storage.md` for the format rationale.
 
 ## 8. Error model
@@ -213,9 +213,9 @@ invariant (`topic.ErrAlreadyExists`, `offset.ErrOutOfRange`,
 `message.ErrInvalid`, ...). The gRPC adapter maps domain errors to canonical
 gRPC codes; nothing above the domain sees transport-specific errors.
 
-Storage distinguishes **recoverable** corruption (torn write at the log tail —
+Storage distinguishes **recoverable** corruption (torn write at the log tail,
 truncated and logged during recovery) from **fatal** conditions (unreadable
-metadata, unsupported format — broker refuses to start).
+metadata, unsupported format, broker refuses to start).
 
 ## 9. Extension points
 

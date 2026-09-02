@@ -1,7 +1,7 @@
 # Storage
 
 Pulse's data plane is an append-only, immutable, checksummed log divided into
-segment files — the same family of design as Kafka and Redpanda, sized and
+segment files, the same family of design as Kafka and Redpanda, sized and
 documented for a solo maintainer. This document is the storage contract:
 the format, the layout, and the recovery guarantees. Phase 1 implements
 append, sequential/random read, indexing, rotation, fsync, and crash recovery;
@@ -96,7 +96,7 @@ corrupt batch cannot fabricate offsets outside its own range.
 ### CRC32C
 
 The CRC is computed over the entire batch from `baseOffset` through the end of
-the records section using CRC-32C (Castagnoli) — the standard for checksummed
+the records section using CRC-32C (Castagnoli), the standard for checksummed
 framing on modern hardware. Decode verifies the CRC before trusting any record.
 
 ## 4. Index format
@@ -163,7 +163,7 @@ metadata store.
 On startup, for every partition directory the engine performs **log
 recovery**: the snapshot fast path (§8) when a valid checkpoint matches the
 on-disk state, otherwise the full scan below. The scan is the correctness
-baseline — correctness never depends on a snapshot being present.
+baseline: correctness never depends on a snapshot being present.
 
 The full scan proceeds as follows:
 
@@ -181,7 +181,7 @@ The full scan proceeds as follows:
 5. Recompute LEO from the final offsets.
 
 A torn tail is therefore always truncated to the last fully-written, CRC-valid
-batch — never partially accepted. This is what makes guarantee #1 hold across
+batch: never partially accepted. This is what makes guarantee #1 hold across
 crashes.
 
 ## 8. Retention, snapshots, compaction
@@ -210,7 +210,7 @@ containing any live consumer cursor is planned.
 
 ### Snapshots (implemented)
 
-Every partition has one `snapshot` file — a tiny, atomically-written checkpoint
+Every partition has one `snapshot` file, a tiny, atomically-written checkpoint
 that makes recovery constant-time instead of scan-from-epoch:
 
 ```
@@ -264,7 +264,7 @@ allocation-friendly.
   N messages costs roughly the same as one; this is the primary lever for
   high-throughput publish.
 - **Sparse index**: a 512 MiB segment needs ~131k entries (~1 MiB) at 4 KiB
-  intervals — cheap to keep resident — and lookup needs at most a few KiB of
+  intervals (cheap to keep resident), and lookup needs at most a few KiB of
   decode. Dense indexing would be pure waste.
 - **CRC32C over the whole batch**: catches torn writes and bit rot at the frame
   level before any record is trusted; per-record CRCs would add overhead with

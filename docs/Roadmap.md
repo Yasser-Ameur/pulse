@@ -2,10 +2,10 @@
 
 Pulse is built in phases. Every phase is a vertical slice that compiles, is
 tested, and keeps the architecture frozen from Architecture.md. This roadmap
-maps each future capability to the extension point it plugs into — none of
+maps each future capability to the extension point it plugs into: none of
 these require a redesign.
 
-## Phase 1 — Core broker
+## Phase 1: Core broker
 
 - Single-node broker with durable append-only log.
 - Topics: create / delete / list with persisted metadata.
@@ -13,13 +13,13 @@ these require a redesign.
 - gRPC API, CLI, in-process integration tests, CI, full documentation.
 - Status: **shipped** (tag `v0.1.0-phase1`).
 
-## Phase 2 — Storage engine (in progress)
+## Phase 2: Storage engine (in progress)
 
 What Storage.md already specifies but Phase 1 defers:
 
 - **Shipped**: retention sweeper (time/size) over sealed segments.
 - **Shipped**: segment snapshots to make recovery constant-time.
-- **Shipped**: stress tests — crash-at-any-point equivalence against a
+- **Shipped**: stress tests, crash-at-any-point equivalence against a
   reference model (payloads and timestamps preserved, offsets contiguous).
 - **Shipped**: data-directory layout fix (topic/partition paths).
 - **Shipped**: multi-partition topics, 1 to `topic.MaxPartitions` (256) per
@@ -32,7 +32,7 @@ What Storage.md already specifies but Phase 1 defers:
   space preserved, design in [compaction-design.md](compaction-design.md)) and
   read-only memory mapping of sealed segments.
 
-## Phase 3 — Networking
+## Phase 3: Networking
 
 - **Shipped**: TLS and mTLS on the gRPC transport (`tls.cert-file`,
   `tls.key-file`, `tls.client-ca-file`), covering both server and client
@@ -51,7 +51,7 @@ What Storage.md already specifies but Phase 1 defers:
 - Remaining: per-topic authorization; rich flow-control tuning surfaced as
   configuration.
 
-## Phase 4 — Consumer groups
+## Phase 4: Consumer groups
 
 - Group coordinator over the metadata plane (the cursor schema generalizes:
   cursor/group/... ).
@@ -60,15 +60,15 @@ What Storage.md already specifies but Phase 1 defers:
 - Retry policies and dead-letter queues via the reserved `__` internal topic
   namespace.
 
-## Phase 5 — Cluster
+## Phase 5: Cluster
 
-- **etcd/raft, one group per partition** (Redpanda-style) — the approved
+- **etcd/raft, one group per partition** (Redpanda-style): the approved
   consensus model.
 - Raft for cluster metadata; leader/follower roles on `BrokerState`.
 - Broker discovery, health monitoring, failover.
 - Multi-node integration tests (Testcontainers) as a separate CI workflow.
 
-## Phase 6 — Observability
+## Phase 6: Observability
 
 - **Shipped**: `ports.MetricsRecorder` → Prometheus adapter
   (`internal/infrastructure/metrics/prometheus.go`), served at `/metrics` on
@@ -77,7 +77,7 @@ What Storage.md already specifies but Phase 1 defers:
   already in place (zap behind `ports.Logger`).
 - Remaining: OpenTelemetry tracing via gRPC interceptors.
 
-## Phase 7 — SDK
+## Phase 7: SDK
 
 - **Shipped**: the first-class public Go SDK, `pkg/client` (Dial, Publish,
   Subscribe with follow/resume, Ack, TLS, retry with backoff). See
