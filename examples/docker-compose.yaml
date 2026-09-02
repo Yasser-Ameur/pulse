@@ -8,11 +8,11 @@ services:
       - "9091:9091" # monitor: /healthz, /readyz, /metrics
     volumes:
       - pulse-data:/data
+    # Uncomment to require a bearer token from every client
+    # (docs/Configuration.md, Authentication). Without it the broker warns
+    # at startup and accepts anyone who can reach port 9090.
     # environment:
-    #   PULSE_AUTH_TOKENS: ""
-    #   Pulse has no authentication yet (see docs/Guarantees.md); this is a
-    #   placeholder for when ports.Authentication ships, not a working
-    #   setting today.
+    #   PULSE_AUTH_TOKENS: "change-me"
     healthcheck:
       test: ["CMD", "/app/pulse-server", "healthcheck", "--config", "/app/config.yaml"]
       interval: 10s
