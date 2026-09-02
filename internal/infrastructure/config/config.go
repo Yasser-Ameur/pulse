@@ -59,6 +59,18 @@ const (
 // §5, §8).
 const DefaultRetentionInterval = 30 * time.Second
 
+// Compaction defaults (docs/compaction-design.md sec 9).
+const (
+	// DefaultCompactionInterval is how often the compaction sweeper runs.
+	DefaultCompactionInterval = 30 * time.Second
+	// DefaultCompactionTombstoneRetention is how long a tombstone survives
+	// compaction before it, and the values it superseded, are dropped.
+	DefaultCompactionTombstoneRetention = 24 * time.Hour
+	// DefaultCompactionMinGainRatio is the minimum fraction a segment must
+	// shrink by for a compaction rewrite to be kept.
+	DefaultCompactionMinGainRatio = 0.1
+)
+
 // DefaultShutdownGrace is how long the server waits for graceful drain before
 // force-closing in-flight RPCs (Concurrency.md §6).
 const DefaultShutdownGrace = 10 * time.Second
@@ -107,6 +119,17 @@ type Storage struct {
 	// RetentionInterval is how often the retention sweeper runs; zero disables
 	// the background sweeper.
 	RetentionInterval Duration `yaml:"retention-interval" json:"retention-interval"`
+	// CompactionInterval is how often the compaction sweeper runs for topics
+	// configured with the "compact" cleanup policy; zero disables it.
+	CompactionInterval Duration `yaml:"compaction-interval" json:"compaction-interval"`
+	// CompactionTombstoneRetention is how long a tombstone (a keyed record
+	// with a nil payload) survives compaction before it, and the values it
+	// superseded, are dropped for good.
+	CompactionTombstoneRetention Duration `yaml:"compaction-tombstone-retention" json:"compaction-tombstone-retention"`
+	// CompactionMinGainRatio is the minimum fraction a segment must shrink by
+	// for a compaction rewrite to be kept; below this, and with no expired
+	// tombstones removed, the rewrite is discarded.
+	CompactionMinGainRatio float64 `yaml:"compaction-min-gain-ratio" json:"compaction-min-gain-ratio"`
 }
 
 // Subscribe bounds a single subscribe read.
@@ -159,6 +182,10 @@ func Default() Config {
 			SyncMode:           SyncModeEveryWrite,
 			SyncInterval:       Duration(100 * time.Millisecond),
 			RetentionInterval:  Duration(DefaultRetentionInterval),
+
+			CompactionInterval:           Duration(DefaultCompactionInterval),
+			CompactionTombstoneRetention: Duration(DefaultCompactionTombstoneRetention),
+			CompactionMinGainRatio:       DefaultCompactionMinGainRatio,
 		},
 		Subscribe: Subscribe{
 			ReadLimit:    512,
@@ -272,6 +299,21 @@ func envInt64(key string, dst *int64, errs *[]error) {
 	*dst = n
 }
 
+// envFloat64 applies a float64 environment override to dst, appending a parse
+// error naming key to errs on failure.
+func envFloat64(key string, dst *float64, errs *[]error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("env %s: %w", key, err))
+		return
+	}
+	*dst = f
+}
+
 // envDuration applies a Duration environment override to dst, appending a
 // parse error naming key to errs on failure.
 func envDuration(key string, dst *Duration, errs *[]error) {
@@ -311,6 +353,9 @@ func (c *Config) applyEnv() error {
 	envString("PULSE_STORAGE_SYNC_MODE", &c.Storage.SyncMode)
 	envDuration("PULSE_STORAGE_SYNC_INTERVAL", &c.Storage.SyncInterval, &errs)
 	envDuration("PULSE_STORAGE_RETENTION_INTERVAL", &c.Storage.RetentionInterval, &errs)
+	envDuration("PULSE_STORAGE_COMPACTION_INTERVAL", &c.Storage.CompactionInterval, &errs)
+	envDuration("PULSE_STORAGE_COMPACTION_TOMBSTONE_RETENTION", &c.Storage.CompactionTombstoneRetention, &errs)
+	envFloat64("PULSE_STORAGE_COMPACTION_MIN_GAIN_RATIO", &c.Storage.CompactionMinGainRatio, &errs)
 
 	envInt("PULSE_SUBSCRIBE_READ_LIMIT", &c.Subscribe.ReadLimit, &errs)
 	envInt("PULSE_SUBSCRIBE_READ_MAX_BYTES", &c.Subscribe.ReadMaxBytes, &errs)
@@ -366,6 +411,15 @@ func (c Config) Validate() error {
 	}
 	if c.Storage.RetentionInterval < 0 {
 		errs = append(errs, errors.New("storage.retention-interval must not be negative"))
+	}
+	if c.Storage.CompactionInterval < 0 {
+		errs = append(errs, errors.New("storage.compaction-interval must not be negative"))
+	}
+	if c.Storage.CompactionTombstoneRetention < 0 {
+		errs = append(errs, errors.New("storage.compaction-tombstone-retention must not be negative"))
+	}
+	if c.Storage.CompactionMinGainRatio < 0 || c.Storage.CompactionMinGainRatio > 1 {
+		errs = append(errs, fmt.Errorf("storage.compaction-min-gain-ratio %v out of range [0,1]", c.Storage.CompactionMinGainRatio))
 	}
 	if c.Subscribe.ReadLimit <= 0 {
 		errs = append(errs, errors.New("subscribe.read-limit must be positive"))

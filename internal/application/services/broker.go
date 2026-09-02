@@ -34,8 +34,9 @@ type Broker struct {
 	logger     ports.Logger
 	version    string
 
-	retentionInterval time.Duration
-	sweepStop         chan struct{}
+	retentionInterval  time.Duration
+	compactionInterval time.Duration
+	sweepStop          chan struct{}
 
 	// drainCtx is canceled with cause broker.ErrDraining the instant Shutdown
 	// begins, so live Subscribe streams unblock immediately instead of
@@ -92,6 +93,10 @@ type BrokerOptions struct {
 	// RetentionInterval is how often the background retention sweeper runs.
 	// Zero disables the sweeper.
 	RetentionInterval time.Duration
+	// CompactionInterval is how often the background compaction sweeper runs
+	// for topics configured with the "compact" cleanup policy. Zero disables
+	// it.
+	CompactionInterval time.Duration
 }
 
 // NewBroker constructs a Broker in the Starting state.
@@ -111,7 +116,8 @@ func NewBroker(opts BrokerOptions) *Broker {
 			Address: opts.ListenAddr,
 			State:   broker.StateStarting,
 		},
-		retentionInterval: opts.RetentionInterval,
+		retentionInterval:  opts.RetentionInterval,
+		compactionInterval: opts.CompactionInterval,
 	}
 	b.publisher = NewPublisher(registry, opts.Clock, opts.Logger, opts.Metrics, &b.publishedRecords, &b.publishedBytes)
 	b.subscriber = NewSubscriber(registry, opts.MetadataStore, SubscriberOptions{
@@ -339,17 +345,22 @@ func (b *Broker) running() error {
 	}
 }
 
-// startSweeper launches the background retention sweeper. The caller holds
-// b.mu; the initial sweep runs asynchronously in the goroutine.
+// startSweeper launches the background maintenance sweeper if retention or
+// compaction (or both) are enabled. The caller holds b.mu; the initial sweep
+// runs asynchronously in the goroutine. Retention and compaction share this
+// one loop by design (docs/compaction-design.md sec 8): they never run
+// concurrently, so a segment can never be closed by one while the other is
+// mid-compaction.
 func (b *Broker) startSweeper() {
-	if b.retentionInterval <= 0 || b.sweepStop != nil {
+	interval := b.sweepInterval()
+	if interval <= 0 || b.sweepStop != nil {
 		return
 	}
 	b.sweepStop = make(chan struct{})
 	stop := b.sweepStop
 	go func() {
 		b.sweep()
-		t := time.NewTicker(b.retentionInterval)
+		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {
@@ -362,7 +373,26 @@ func (b *Broker) startSweeper() {
 	}()
 }
 
-// stopSweeper halts the background retention sweeper. The caller holds b.mu.
+// sweepInterval returns the background sweeper's tick period: the smaller of
+// the retention and compaction intervals that are enabled (nonzero), or zero
+// if neither is. sweep() itself always processes every eligible topic when
+// called directly (e.g. in tests); this interval only paces the automatic
+// background ticker.
+func (b *Broker) sweepInterval() time.Duration {
+	switch {
+	case b.retentionInterval > 0 && b.compactionInterval > 0:
+		if b.retentionInterval < b.compactionInterval {
+			return b.retentionInterval
+		}
+		return b.compactionInterval
+	case b.retentionInterval > 0:
+		return b.retentionInterval
+	default:
+		return b.compactionInterval
+	}
+}
+
+// stopSweeper halts the background maintenance sweeper. The caller holds b.mu.
 func (b *Broker) stopSweeper() {
 	if b.sweepStop == nil {
 		return
@@ -371,41 +401,81 @@ func (b *Broker) stopSweeper() {
 	b.sweepStop = nil
 }
 
-// sweep applies each topic's retention policy to its partition logs. Topics
-// with compaction cleanup or no retention limits are skipped. It is called by
-// the background sweeper and is safe to call directly for tests.
+// sweep applies each topic's maintenance policy to its partition logs:
+// retention trim for CleanupDelete topics, compaction for CleanupCompact
+// ones. It is called by the background sweeper and is safe to call directly
+// for tests.
 func (b *Broker) sweep() {
 	for _, t := range b.registry.Topics() {
-		if t.Config.Cleanup != topic.CleanupDelete {
+		switch t.Config.Cleanup {
+		case topic.CleanupDelete:
+			b.sweepRetention(t)
+		case topic.CleanupCompact:
+			b.sweepCompaction(t)
+		}
+	}
+}
+
+// sweepRetention applies t's retention policy to each of its partition logs.
+// A topic with no retention limits configured is a no-op.
+func (b *Broker) sweepRetention(t topic.Topic) {
+	policy := t.Config.Retention
+	if policy.MaxAge <= 0 && policy.MaxBytes <= 0 {
+		return
+	}
+	for p := 0; p < t.Partitions; p++ {
+		pid := partition.ID(p)
+		lg, ok := b.registry.Log(t.Name, pid)
+		if !ok {
 			continue
 		}
-		policy := t.Config.Retention
-		if policy.MaxAge <= 0 && policy.MaxBytes <= 0 {
+		res, err := lg.Trim(b.clock.Now(), policy)
+		if err != nil {
+			b.logger.Warn("retention sweep failed",
+				ports.Field{Key: logKeyTopic, Value: t.Name.String()},
+				ports.Field{Key: logKeyPartition, Value: pid.Int32()},
+				ports.Field{Key: logKeyError, Value: err.Error()},
+			)
 			continue
 		}
-		for p := 0; p < t.Partitions; p++ {
-			pid := partition.ID(p)
-			lg, ok := b.registry.Log(t.Name, pid)
-			if !ok {
-				continue
-			}
-			res, err := lg.Trim(b.clock.Now(), policy)
-			if err != nil {
-				b.logger.Warn("retention sweep failed",
-					ports.Field{Key: logKeyTopic, Value: t.Name.String()},
-					ports.Field{Key: logKeyPartition, Value: pid.Int32()},
-					ports.Field{Key: logKeyError, Value: err.Error()},
-				)
-				continue
-			}
-			if res.Segments > 0 {
-				b.logger.Info("retention swept",
-					ports.Field{Key: logKeyTopic, Value: t.Name.String()},
-					ports.Field{Key: logKeyPartition, Value: pid.Int32()},
-					ports.Field{Key: "segments", Value: res.Segments},
-					ports.Field{Key: "bytes", Value: res.Bytes},
-				)
-			}
+		if res.Segments > 0 {
+			b.logger.Info("retention swept",
+				ports.Field{Key: logKeyTopic, Value: t.Name.String()},
+				ports.Field{Key: logKeyPartition, Value: pid.Int32()},
+				ports.Field{Key: "segments", Value: res.Segments},
+				ports.Field{Key: "bytes", Value: res.Bytes},
+			)
+		}
+	}
+}
+
+// sweepCompaction runs a bounded compaction pass over each of t's partition
+// logs.
+func (b *Broker) sweepCompaction(t topic.Topic) {
+	for p := 0; p < t.Partitions; p++ {
+		pid := partition.ID(p)
+		lg, ok := b.registry.Log(t.Name, pid)
+		if !ok {
+			continue
+		}
+		res, err := lg.Compact(context.Background())
+		if err != nil {
+			b.logger.Warn("compaction sweep failed",
+				ports.Field{Key: logKeyTopic, Value: t.Name.String()},
+				ports.Field{Key: logKeyPartition, Value: pid.Int32()},
+				ports.Field{Key: logKeyError, Value: err.Error()},
+			)
+			continue
+		}
+		if res.Segments > 0 {
+			b.logger.Info("compaction swept",
+				ports.Field{Key: logKeyTopic, Value: t.Name.String()},
+				ports.Field{Key: logKeyPartition, Value: pid.Int32()},
+				ports.Field{Key: "segments", Value: res.Segments},
+				ports.Field{Key: "bytes_before", Value: res.BytesBefore},
+				ports.Field{Key: "bytes_after", Value: res.BytesAfter},
+				ports.Field{Key: "tombstones_removed", Value: res.TombstonesRemoved},
+			)
 		}
 	}
 }
