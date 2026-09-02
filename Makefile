@@ -57,7 +57,7 @@ coverage:
 	go tool cover -html=coverage.out -o coverage.html
 
 # Floor is 3 points under the total measured on 2026-09-02 (53.5%).
-COVERAGE_FLOOR ?= 50
+COVERAGE_FLOOR ?= 65
 
 .PHONY: coverage-check
 coverage-check:
