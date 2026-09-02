@@ -24,6 +24,10 @@ func TestWrapErrUnmappedCodePassesThrough(t *testing.T) {
 	require.Equal(t, orig, wrapErr(orig))
 }
 
+func TestFromPBMessageNilIsZeroValue(t *testing.T) {
+	require.Equal(t, Message{}, fromPBMessage(nil))
+}
+
 func TestShouldResume(t *testing.T) {
 	tests := []struct {
 		name string
