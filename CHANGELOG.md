@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-02
+
+### Changed
+
+- The Go module path is now `github.com/Yasser-Ameur/pulse`, the repository's
+  actual host, so `go get github.com/Yasser-Ameur/pulse` resolves without a
+  `replace` directive. Every import, the bench module, the Makefile, the
+  Dockerfile, the release workflow and the client docs moved with it.
+
 ## [0.2.0] - 2026-09-02
 
 ### Added
