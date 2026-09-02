@@ -143,3 +143,32 @@ func TestPubSubServerPublishInvalidTopicMapsError(t *testing.T) {
 	_, err := ps.Publish(context.Background(), &pulsepb.PublishRequest{Topic: "", Messages: []*pulsepb.Message{{Payload: []byte("x")}}})
 	require.Error(t, err)
 }
+
+func TestBrokerServerDeleteTopicMissingMapsError(t *testing.T) {
+	app := newTestApp(t)
+	s := NewBrokerServer(app)
+	_, err := s.DeleteTopic(context.Background(), &pulsepb.DeleteTopicRequest{Name: "missing"})
+	require.Error(t, err)
+}
+
+func TestPubSubServerAckUnknownTopicMapsError(t *testing.T) {
+	app := newTestApp(t)
+	ps := NewPubSubServer(app, timeutil.SystemClock{})
+	_, err := ps.Ack(context.Background(), &pulsepb.AckRequest{Topic: "missing", Consumer: "c1", Partition: 0, Offset: 0})
+	require.Error(t, err)
+}
+
+func TestPubSubServerSubscribeInvalidSubscriptionMapsError(t *testing.T) {
+	app := newTestApp(t)
+	bs := NewBrokerServer(app)
+	ps := NewPubSubServer(app, timeutil.SystemClock{})
+	ctx := context.Background()
+	_, err := bs.CreateTopic(ctx, &pulsepb.CreateTopicRequest{Name: "orders", Partitions: 1})
+	require.NoError(t, err)
+
+	// A consumer name containing "/" fails ID.Validate, so sub.Validate()
+	// rejects the subscription before any read is attempted.
+	stream := &fakeSubscribeStream{ctx: ctx}
+	err = ps.Subscribe(&pulsepb.SubscribeRequest{Topic: "orders", Partition: 0, Consumer: "bad/name"}, stream)
+	require.Error(t, err)
+}
